@@ -10,7 +10,7 @@
 //   - 不需要改业务代码
 // ============================================================
 
-import type { Gender, Item, Look } from '../types';
+import type { Gender, Item, Look, SavedTrip } from '../types';
 
 const NS = 'ootd:v1:';
 
@@ -60,6 +60,10 @@ export const storage = {
   // ---------- 试穿生成图缓存（key = lookId:mode）---------- 
   getTryOnCache: () => readKey<Record<string, string>>('tryOnCache', {}),
   setTryOnCache: (m: Record<string, string>) => writeKey('tryOnCache', m),
+
+  // ---------- 固定行装（出行收藏） ----------
+  getSavedTrips: () => readKey<SavedTrip[]>('savedTrips', []),
+  setSavedTrips: (trips: SavedTrip[]) => writeKey('savedTrips', trips),
 
   // ---------- 历史 Look（最近30天） ----------
   getHistory: () => readKey<Look[]>('history', []),

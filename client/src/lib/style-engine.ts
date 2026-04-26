@@ -294,3 +294,86 @@ export function planTrip(input: TripPlanInput): { dailyLooks: Look[]; packingLis
 
   return { dailyLooks: dailyLooks.filter(Boolean) as Look[], packingList: list };
 }
+
+// ============================================================
+// 出行模式 B：仅从「必带单品」反推 —— 不使用全衣橱
+// 适用：用户明确选了 N 件必带单品，在这 N 件里交换搭配
+// ============================================================
+
+export interface TripPlanFromLockedInput {
+  /** 必带单品（用户选中的那几件，所有天都从这里选） */
+  lockedItems: Item[];
+  weather: Weather[];
+  purpose: 'business' | 'leisure' | 'mixed';
+  stylePrefs: Style[];
+  luggageType: 'cabin' | 'check-in';
+}
+
+export function planTripFromLocked(input: TripPlanFromLockedInput): { dailyLooks: Look[]; packingList: Item[] } {
+  const { lockedItems, weather, purpose, stylePrefs, luggageType } = input;
+
+  if (lockedItems.length === 0) {
+    return { dailyLooks: [], packingList: [] };
+  }
+
+  // 按类别分组
+  const tops = lockedItems.filter((i) => i.category === 'top');
+  const bottoms = lockedItems.filter((i) => i.category === 'bottom');
+  const dresses = lockedItems.filter((i) => i.category === 'dress');
+  const shoes = lockedItems.filter((i) => i.category === 'shoes');
+  const outers = lockedItems.filter((i) => i.category === 'outer');
+  const accs = lockedItems.filter((i) => i.category === 'accessory');
+
+  const dressByPurpose = (i: number): DressCode => {
+    if (purpose === 'business') return i === 0 ? 'formal' : 'smart-casual';
+    if (purpose === 'mixed') return i % 3 === 0 ? 'smart-casual' : 'casual';
+    return 'casual';
+  };
+
+  // 为每一天从 locked 里轮换选品
+  const dailyLooks: Look[] = weather.map((w, i) => {
+    const avgT = (w.tempHigh + w.tempLow) / 2;
+    const needOuter = avgT < 18;
+
+    const set: Item[] = [];
+    let dressed = false;
+
+    // 连衣裙优先（如果有 + 天气合适 + 按周期轮换）
+    if (dresses.length > 0 && avgT >= 12 && i % 3 === 1) {
+      set.push(dresses[i % dresses.length]);
+      dressed = true;
+    }
+
+    if (!dressed) {
+      if (tops.length > 0) set.push(tops[i % tops.length]);
+      if (bottoms.length > 0) set.push(bottoms[i % bottoms.length]);
+    }
+
+    if (shoes.length > 0) set.push(shoes[i % shoes.length]);
+    if (needOuter && outers.length > 0) set.push(outers[i % outers.length]);
+    if (accs.length > 0) set.push(accs[i % accs.length]);
+
+    if (set.length === 0) return null;
+
+    const styles = Array.from(new Set(set.flatMap((it) => it.styles)));
+    return {
+      id: uid(),
+      items: set,
+      occasion: 'travel' as Occasion,
+      dressCode: dressByPurpose(i),
+      weatherRange: { min: avgT - 4, max: avgT + 4 },
+      styles,
+      score: Math.round(70 + Math.min(20, styleScore(set, stylePrefs) / 2)),
+      reason: '从你选的必带单品里轮换搭配',
+    } as Look;
+  }).filter((l): l is Look => Boolean(l));
+
+  // 装箱清单 = 必带单品全集（可能从未上身但依然带上）
+  let list = [...lockedItems];
+  if (luggageType === 'cabin' && list.length > 8) {
+    // 超出登机箱上限，按 wearCount 优先保留
+    list = list.sort((a, b) => b.wearCount - a.wearCount).slice(0, 8);
+  }
+
+  return { dailyLooks, packingList: list };
+}

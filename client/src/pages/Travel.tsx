@@ -1,12 +1,14 @@
-// 出行模式：输入目的地+天数+目的+行李 → 生成每日穿搭日历 + 装箱清单
-// 阶段2：城市自动补全 + 真实天气拉取
+// 出行模式：双模式（智能推荐 / 从必带单品）+ 固定行装收藏
 import { useEffect, useState } from 'react';
 import { useApp } from '../store';
-import { planTrip } from '../lib/style-engine';
+import { planTrip, planTripFromLocked } from '../lib/style-engine';
 import { getMockWeather } from '../lib/mock-data';
 import { searchCity, fetchWeather, CityResult } from '../lib/weather-api';
-import type { Look, Item, Style, Weather } from '../types';
-import { Luggage, MapPin, Sparkles, ChevronDown, ChevronUp, Lock, Sun, Cloud, CloudRain, Loader2 } from 'lucide-react';
+import type { Look, Item, Style, Weather, SavedTrip } from '../types';
+import {
+  Luggage, MapPin, Sparkles, ChevronDown, ChevronUp, Lock, Sun, Cloud, CloudRain,
+  Loader2, Bookmark, X,
+} from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 const STYLES: { value: Style; label: string }[] = [
@@ -19,10 +21,18 @@ const STYLES: { value: Style; label: string }[] = [
 
 const W_ICON = { sunny: Sun, cloudy: Cloud, rainy: CloudRain, snowy: Cloud, windy: Cloud };
 
+type Mode = 'smart' | 'from-locked';
+
+const uid = () => Math.random().toString(36).slice(2, 10);
+
 export function Travel() {
-  const { wardrobe } = useApp();
+  const { wardrobe, addSavedTrip, savedTrips } = useApp();
   const { toast } = useToast();
 
+  // —— 模式 ——
+  const [mode, setMode] = useState<Mode>('smart');
+
+  // —— 表单 state ——
   const [destination, setDestination] = useState('东京');
   const [destCoords, setDestCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [citySuggestions, setCitySuggestions] = useState<CityResult[]>([]);
@@ -38,6 +48,35 @@ export function Travel() {
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<{ dailyLooks: Look[]; packing: Item[] } | null>(null);
 
+  // —— 保存方案弹窗 ——
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [saveName, setSaveName] = useState('');
+
+  // —— 接收来自收藏页的载入信号 ——
+  useEffect(() => {
+    const onLoad = (ev: Event) => {
+      const trip = (ev as CustomEvent<SavedTrip>).detail;
+      if (!trip) return;
+      // 用 wardrobe 当前可用 ID 过滤（某些单品可能已被删）
+      const validLocked = trip.lockedItemIds.filter((id) => wardrobe.some((w) => w.id === id));
+      setMode(trip.mode);
+      setDestination(trip.destination);
+      setDestCoords(trip.destCoords ?? null);
+      setDays(trip.days);
+      setPurpose(trip.purpose);
+      setLuggage(trip.luggage);
+      setStylePrefs(trip.stylePrefs);
+      setLockedIds(validLocked);
+      setResult(null);
+      toast({
+        title: `已载入「${trip.name}」`,
+        description: '将根据当前天气重新生成搭配',
+      });
+    };
+    window.addEventListener('ootd:load-trip', onLoad);
+    return () => window.removeEventListener('ootd:load-trip', onLoad);
+  }, [wardrobe, toast]);
+
   // —— 目的地搜索（防抖 350ms） ——
   useEffect(() => {
     if (!destination.trim() || destCoords) return;
@@ -48,17 +87,17 @@ export function Travel() {
     return () => clearTimeout(timer);
   }, [destination, destCoords]);
 
-  // —— 选定城市后拉真实7日天气 ——
+  // —— 选定城市后拉真实天气 ——
   useEffect(() => {
     if (!destCoords) {
-      setWeatherList(getMockWeather(destination).slice(0, days));
+      setWeatherList(getMockWeather(destination, undefined, days));
       return;
     }
     let cancelled = false;
     setLoadingWx(true);
-    fetchWeather(destCoords.lat, destCoords.lon, destination)
+    fetchWeather(destCoords.lat, destCoords.lon, destination, days)
       .then((list) => {
-        if (!cancelled) setWeatherList(list.slice(0, days));
+        if (!cancelled) setWeatherList(list);
       })
       .finally(() => !cancelled && setLoadingWx(false));
     return () => {
@@ -73,19 +112,37 @@ export function Travel() {
   };
 
   const handleGenerate = async () => {
+    if (mode === 'from-locked' && lockedIds.length === 0) {
+      toast({ title: '请先选必带单品', description: '此模式只在你选的单品里搭配', variant: 'destructive' });
+      return;
+    }
     setGenerating(true);
     const wx = weather.length > 0 ? weather : getMockWeather(destination).slice(0, days);
-    const r = planTrip({
-      wardrobe,
-      weather: wx,
-      purpose,
-      stylePrefs,
-      lockedItemIds: lockedIds,
-      luggageType: luggage,
-    });
-    setResult({ dailyLooks: r.dailyLooks, packing: r.packingList });
+
+    if (mode === 'from-locked') {
+      const lockedItems = wardrobe.filter((i) => lockedIds.includes(i.id));
+      const r = planTripFromLocked({
+        lockedItems,
+        weather: wx,
+        purpose,
+        stylePrefs,
+        luggageType: luggage,
+      });
+      setResult({ dailyLooks: r.dailyLooks, packing: r.packingList });
+      toast({ title: '行程已生成', description: `从 ${lockedItems.length} 件必带单品里搭配` });
+    } else {
+      const r = planTrip({
+        wardrobe,
+        weather: wx,
+        purpose,
+        stylePrefs,
+        lockedItemIds: lockedIds,
+        luggageType: luggage,
+      });
+      setResult({ dailyLooks: r.dailyLooks, packing: r.packingList });
+      toast({ title: '行程已生成', description: `共 ${r.packingList.length} 件衣物入箱` });
+    }
     setGenerating(false);
-    toast({ title: '行程已生成', description: `共 ${r.packingList.length} 件衣物入箱` });
   };
 
   const toggleStyle = (s: Style) => {
@@ -96,6 +153,27 @@ export function Travel() {
     setLockedIds((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
   };
 
+  const handleSaveTrip = () => {
+    const name = saveName.trim() || `${destination} ${days}天`;
+    const trip: SavedTrip = {
+      id: uid(),
+      name,
+      createdAt: new Date().toISOString(),
+      destination,
+      destCoords: destCoords ?? undefined,
+      days,
+      purpose,
+      luggage,
+      stylePrefs,
+      lockedItemIds: lockedIds,
+      mode,
+    };
+    addSavedTrip(trip);
+    setShowSaveDialog(false);
+    setSaveName('');
+    toast({ title: '已加入固定行装', description: `${name} · 在「收藏」可一键复用` });
+  };
+
   return (
     <div className="flex-1 overflow-y-auto pb-4">
       <header className="sticky top-0 z-20 bg-background/85 backdrop-blur px-5 pt-5 pb-3 border-b border-card-border">
@@ -104,6 +182,33 @@ export function Travel() {
           出行装
         </h1>
         <p className="text-xs text-muted-foreground">告诉我你要去哪 · AI 帮你搞定行李箱</p>
+
+        {/* 模式 Tab */}
+        <div className="mt-3 grid grid-cols-2 gap-1 p-1 rounded-xl bg-card border border-card-border">
+          <button
+            data-testid="tab-mode-smart"
+            onClick={() => setMode('smart')}
+            className={`py-1.5 rounded-lg text-xs font-semibold transition ${
+              mode === 'smart' ? 'bg-foreground text-background' : 'text-muted-foreground hover-elevate'
+            }`}
+          >
+            智能推荐
+          </button>
+          <button
+            data-testid="tab-mode-locked"
+            onClick={() => setMode('from-locked')}
+            className={`py-1.5 rounded-lg text-xs font-semibold transition ${
+              mode === 'from-locked' ? 'bg-foreground text-background' : 'text-muted-foreground hover-elevate'
+            }`}
+          >
+            从必带单品
+          </button>
+        </div>
+        <p className="mt-1.5 text-[11px] text-muted-foreground leading-relaxed">
+          {mode === 'smart'
+            ? '根据目的地、天气、风格偏好，从全衣橱挑选并搭配'
+            : '只在你选的必带单品里轮换搭配（适合精打细算的精简党）'}
+        </p>
       </header>
 
       <div className="px-5 pt-4 space-y-5">
@@ -118,7 +223,7 @@ export function Travel() {
                 value={destination}
                 onChange={(e) => {
                   setDestination(e.target.value);
-                  setDestCoords(null); // 重新输入需要重新搜城市
+                  setDestCoords(null);
                 }}
                 placeholder="东京、巴黎、北京…"
                 className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-card border border-card-border text-sm focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none"
@@ -129,7 +234,6 @@ export function Travel() {
                 </span>
               )}
             </div>
-            {/* 城市建议下拉 */}
             {citySuggestions.length > 0 && !destCoords && (
               <div className="absolute z-30 left-0 right-0 top-full mt-1 bg-card rounded-xl border border-card-border shadow-lg overflow-hidden">
                 {citySuggestions.slice(0, 4).map((c) => (
@@ -154,9 +258,10 @@ export function Travel() {
               data-testid="input-days"
               type="number"
               min={1}
-              max={7}
+              max={30}
               value={days}
-              onChange={(e) => setDays(Math.max(1, Math.min(7, +e.target.value || 1)))}
+              onChange={(e) => setDays(Math.max(1, Math.min(30, +e.target.value || 1)))}
+              placeholder="1-30"
               className="mt-1.5 w-full px-3 py-2.5 rounded-xl bg-card border border-card-border text-sm focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none"
             />
           </div>
@@ -235,14 +340,22 @@ export function Travel() {
           <button
             data-testid="button-toggle-lock"
             onClick={() => setShowLockPicker((v) => !v)}
-            className="w-full flex items-center justify-between p-3 rounded-xl border border-card-border bg-card hover-elevate"
+            className={`w-full flex items-center justify-between p-3 rounded-xl border bg-card hover-elevate ${
+              mode === 'from-locked' && lockedIds.length === 0 ? 'border-primary' : 'border-card-border'
+            }`}
           >
             <span className="flex items-center gap-2 text-sm">
               <Lock className="h-4 w-4 text-muted-foreground" />
-              必带单品（{lockedIds.length}）
+              {mode === 'from-locked' ? '必选 · 必带单品' : '必带单品（选填）'}
+              <span className={`text-xs ${lockedIds.length > 0 ? 'text-primary font-semibold' : 'text-muted-foreground'}`}>
+                ({lockedIds.length})
+              </span>
             </span>
             {showLockPicker ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </button>
+          {mode === 'from-locked' && lockedIds.length === 0 && (
+            <p className="mt-1.5 text-[11px] text-primary">此模式下至少要选 1 件单品才能生成</p>
+          )}
           {showLockPicker && (
             <div className="mt-2 grid grid-cols-4 gap-2 p-2 rounded-xl bg-card border border-card-border">
               {wardrobe.map((it) => {
@@ -271,11 +384,14 @@ export function Travel() {
 
         {/* 天气预览 */}
         <section>
-          <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+          <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5 flex-wrap">
             未来 {days} 天天气
             {loadingWx && <Loader2 className="h-3 w-3 animate-spin" />}
             {destCoords && !loadingWx && (
               <span className="text-[10px] text-primary normal-case font-medium">· Open-Meteo 实时</span>
+            )}
+            {days > 16 && (
+              <span className="text-[10px] text-muted-foreground normal-case font-medium">· 后 {days - 16} 天为同期均值</span>
             )}
           </h2>
           <div className="flex gap-2 overflow-x-auto -mx-1 px-1 pb-1">
@@ -307,6 +423,19 @@ export function Travel() {
         {/* 结果展示 */}
         {result && (
           <>
+            {/* 保存为固定行装 */}
+            <button
+              data-testid="button-save-trip"
+              onClick={() => {
+                setSaveName(`${destination} ${days}天`);
+                setShowSaveDialog(true);
+              }}
+              className="w-full py-3 rounded-xl bg-card border-2 border-dashed border-primary/40 text-primary font-semibold flex items-center justify-center gap-2 hover-elevate"
+            >
+              <Bookmark className="h-4 w-4" />
+              保存为固定行装
+            </button>
+
             {/* 装箱清单 */}
             <section>
               <h2 className="text-base font-semibold tracking-tight mb-2">装箱清单</h2>
@@ -367,7 +496,64 @@ export function Travel() {
             </section>
           </>
         )}
+
+        {/* 已保存方案提示 */}
+        {savedTrips.length > 0 && (
+          <p className="text-center text-[11px] text-muted-foreground">
+            已收藏 {savedTrips.length} 套固定行装 · 去「收藏」一键复用
+          </p>
+        )}
       </div>
+
+      {/* 保存方案弹窗 */}
+      {showSaveDialog && (
+        <div
+          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-6"
+          onClick={() => setShowSaveDialog(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-background p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-base font-semibold">保存为固定行装</h3>
+              <button
+                data-testid="button-close-save"
+                onClick={() => setShowSaveDialog(false)}
+                className="h-7 w-7 flex items-center justify-center rounded-lg hover-elevate"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground mb-3">
+              起个好记的名字，下次出差直接载入即可（重新拉天气，不用反复填）
+            </p>
+            <input
+              data-testid="input-trip-name"
+              value={saveName}
+              onChange={(e) => setSaveName(e.target.value)}
+              placeholder="例如：东京出差 5 天"
+              className="w-full px-3 py-2.5 rounded-xl bg-card border border-card-border text-sm focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none"
+              autoFocus
+            />
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setShowSaveDialog(false)}
+                className="py-2.5 rounded-xl border border-card-border text-sm hover-elevate"
+              >
+                取消
+              </button>
+              <button
+                data-testid="button-confirm-save"
+                onClick={handleSaveTrip}
+                className="py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover-elevate"
+              >
+                保存
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

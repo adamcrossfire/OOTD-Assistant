@@ -6,7 +6,7 @@
 // ============================================================
 
 import { createContext, useContext, useState, useMemo, useEffect, ReactNode } from 'react';
-import type { Gender, Item, Look, Trip, Weather } from './types';
+import type { Gender, Item, Look, SavedTrip, Trip, Weather } from './types';
 import { getMockItems } from './lib/mock-data';
 import { storage } from './lib/storage';
 
@@ -40,6 +40,11 @@ interface AppState {
   currentTrip: Trip | null;
   setCurrentTrip: (t: Trip | null) => void;
 
+  // 固定行装
+  savedTrips: SavedTrip[];
+  addSavedTrip: (t: SavedTrip) => void;
+  removeSavedTrip: (id: string) => void;
+
   // 本人照片 + 试穿缓存
   selfPortrait: string | null;            // base64 dataURL
   setSelfPortrait: (d: string | null) => void;
@@ -66,6 +71,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [favoriteLooks, setFavoriteLooks] = useState<Look[]>(() => storage.getFavorites());
   const [history, setHistory] = useState<Look[]>(() => storage.getHistory());
   const [currentTrip, setCurrentTrip] = useState<Trip | null>(null);
+  const [savedTrips, setSavedTrips] = useState<SavedTrip[]>(() => storage.getSavedTrips());
   const [selfPortrait, setSelfPortraitState] = useState<string | null>(() => storage.getSelfPortrait());
   const [tryOnCache, setTryOnCacheState] = useState<Record<string, string>>(() => storage.getTryOnCache());
 
@@ -76,6 +82,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => storage.setFavorites(favoriteLooks), [favoriteLooks]);
   useEffect(() => storage.setSelfPortrait(selfPortrait), [selfPortrait]);
   useEffect(() => storage.setTryOnCache(tryOnCache), [tryOnCache]);
+  useEffect(() => storage.setSavedTrips(savedTrips), [savedTrips]);
 
   // —— Actions ——
   const setGender = (g: Gender) => {
@@ -108,6 +115,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  const addSavedTrip = (t: SavedTrip) =>
+    setSavedTrips((prev) => [t, ...prev.filter((p) => p.id !== t.id)]);
+  const removeSavedTrip = (id: string) =>
+    setSavedTrips((prev) => prev.filter((t) => t.id !== id));
+
   const setSelfPortrait = (d: string | null) => setSelfPortraitState(d);
   const setTryOnCacheEntry = (key: string, dataUrl: string) =>
     setTryOnCacheState((prev) => ({ ...prev, [key]: dataUrl }));
@@ -120,6 +132,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setFavoriteLooks([]);
     setHistory([]);
     setCurrentTrip(null);
+    setSavedTrips([]);
     setWeatherState([]);
     setSelfPortraitState(null);
     setTryOnCacheState({});
@@ -144,13 +157,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       pushHistory,
       currentTrip,
       setCurrentTrip,
+      savedTrips,
+      addSavedTrip,
+      removeSavedTrip,
       selfPortrait,
       setSelfPortrait,
       tryOnCache,
       setTryOnCacheEntry,
       resetAll,
     }),
-    [gender, city, weather, wardrobe, favoriteLooks, history, currentTrip, selfPortrait, tryOnCache],
+    [gender, city, weather, wardrobe, favoriteLooks, history, currentTrip, savedTrips, selfPortrait, tryOnCache],
   );
 
   return <AppCtx.Provider value={value}>{children}</AppCtx.Provider>;

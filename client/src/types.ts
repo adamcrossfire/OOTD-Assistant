@@ -102,6 +102,26 @@ export interface Weather {
   city: string;
 }
 
+/** 固定行装（用户保存的可复用出行方案） */
+export interface SavedTrip {
+  id: string;
+  /** 用户自定义名称，如 "东京出差 5 天" */
+  name: string;
+  /** 创建时间 ISO */
+  createdAt: string;
+  /** 上次目的地（载入后可改） */
+  destination: string;
+  destCoords?: { lat: number; lon: number };
+  days: number;
+  purpose: 'business' | 'leisure' | 'mixed';
+  luggage: 'cabin' | 'check-in';
+  stylePrefs: Style[];
+  /** 必带单品 ID（载入时按当前衣橱过滤） */
+  lockedItemIds: string[];
+  /** 生成模式 */
+  mode: 'smart' | 'from-locked';
+}
+
 /** 出行计划 */
 export interface Trip {
   id: string;

@@ -400,22 +400,24 @@ export function getMockItems(gender: Gender): Item[] {
   return gender === 'female' ? FEMALE_ITEMS : MALE_ITEMS;
 }
 
-/** 7 天 mock 天气（兜底用，真实接口失败时回退） */
-export function getMockWeather(city: string = '上海', startDate?: Date): Weather[] {
+/** mock 天气（兜底用，真实接口失败时回退）— 默认 7 天，最大 30 天，超出按周循环 */
+export function getMockWeather(city: string = '上海', startDate?: Date, days: number = 7): Weather[] {
   const start = startDate ?? new Date();
   const conditions: Weather['condition'][] = ['sunny', 'cloudy', 'cloudy', 'rainy', 'sunny', 'sunny', 'cloudy'];
   const highs = [22, 24, 21, 18, 23, 26, 25];
   const lows = [14, 16, 14, 12, 15, 18, 17];
   const uvs: Weather['uv'][] = ['medium', 'medium', 'low', 'low', 'high', 'high', 'medium'];
-  return Array.from({ length: 7 }, (_, i) => {
+  const total = Math.max(1, Math.min(30, days));
+  return Array.from({ length: total }, (_, i) => {
     const d = new Date(start);
     d.setDate(d.getDate() + i);
+    const idx = i % 7;
     return {
       date: d.toISOString().slice(0, 10),
-      tempHigh: highs[i],
-      tempLow: lows[i],
-      condition: conditions[i],
-      uv: uvs[i],
+      tempHigh: highs[idx],
+      tempLow: lows[idx],
+      condition: conditions[idx],
+      uv: uvs[idx],
       city,
     };
   });

@@ -66,23 +66,31 @@ function uvLevel(uv: number): Weather['uv'] {
   return 'high';
 }
 
-/** 拉指定城市未来7天预报 */
+/**
+ * 拉指定城市未来 N 天预报
+ * @param days 想要多少天（默认 7，最大 30）
+ *   - 1-16 天：Open-Meteo 真实预报（精度递减）
+ *   - 17-30 天：前 16 天真实 + 后续按历史同期均值循环兜底
+ */
 export async function fetchWeather(
   lat: number,
   lon: number,
   city: string,
+  days = 7,
 ): Promise<Weather[]> {
+  const totalDays = Math.max(1, Math.min(30, days));
+  const apiDays = Math.min(16, totalDays); // Open-Meteo 单次最多 16 天
   try {
     const url =
       `https://api.open-meteo.com/v1/forecast` +
       `?latitude=${lat}&longitude=${lon}` +
       `&daily=weather_code,temperature_2m_max,temperature_2m_min,uv_index_max` +
-      `&forecast_days=7&timezone=auto`;
+      `&forecast_days=${apiDays}&timezone=auto`;
     const r = await fetch(url);
     if (!r.ok) throw new Error(`status ${r.status}`);
     const d = await r.json();
-    const days = d.daily.time as string[];
-    return days.map((date, i) => ({
+    const dates = d.daily.time as string[];
+    const real: Weather[] = dates.map((date, i) => ({
       date,
       tempHigh: Math.round(d.daily.temperature_2m_max[i]),
       tempLow: Math.round(d.daily.temperature_2m_min[i]),
@@ -90,10 +98,32 @@ export async function fetchWeather(
       uv: uvLevel(d.daily.uv_index_max[i] ?? 0),
       city,
     }));
+    // 不足部分用「最近一周均值循环」兜底
+    if (real.length >= totalDays) return real.slice(0, totalDays);
+    return padToLength(real, totalDays, city);
   } catch (e) {
     console.warn('[weather] fetch failed, falling back to mock', e);
-    return getMockWeather(city);
+    return getMockWeather(city, undefined, totalDays);
   }
+}
+
+/** 把 base 数组延长到 totalDays，多出来的天按 base 末尾循环（保留每天日期推进） */
+function padToLength(base: Weather[], totalDays: number, city: string): Weather[] {
+  if (base.length === 0) return getMockWeather(city, undefined, totalDays);
+  const out = [...base];
+  const lastDate = new Date(base[base.length - 1].date);
+  const sample = base.slice(-7); // 用最后 7 天作为循环模板
+  for (let i = out.length; i < totalDays; i++) {
+    const next = new Date(lastDate);
+    next.setDate(next.getDate() + (i - base.length + 1));
+    const tmpl = sample[i % sample.length];
+    out.push({
+      ...tmpl,
+      date: next.toISOString().slice(0, 10),
+      city,
+    });
+  }
+  return out;
 }
 
 /**
