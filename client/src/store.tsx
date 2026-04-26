@@ -40,6 +40,12 @@ interface AppState {
   currentTrip: Trip | null;
   setCurrentTrip: (t: Trip | null) => void;
 
+  // 本人照片 + 试穿缓存
+  selfPortrait: string | null;            // base64 dataURL
+  setSelfPortrait: (d: string | null) => void;
+  tryOnCache: Record<string, string>;     // key = `${lookId}:${mode}`
+  setTryOnCacheEntry: (key: string, dataUrl: string) => void;
+
   // 重置（设置页 / 切换性别用）
   resetAll: () => void;
 }
@@ -60,12 +66,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [favoriteLooks, setFavoriteLooks] = useState<Look[]>(() => storage.getFavorites());
   const [history, setHistory] = useState<Look[]>(() => storage.getHistory());
   const [currentTrip, setCurrentTrip] = useState<Trip | null>(null);
+  const [selfPortrait, setSelfPortraitState] = useState<string | null>(() => storage.getSelfPortrait());
+  const [tryOnCache, setTryOnCacheState] = useState<Record<string, string>>(() => storage.getTryOnCache());
 
   // —— 自动持久化 ——
   useEffect(() => storage.setGender(gender), [gender]);
   useEffect(() => storage.setCity(city), [city]);
   useEffect(() => storage.setWardrobe(wardrobe), [wardrobe]);
   useEffect(() => storage.setFavorites(favoriteLooks), [favoriteLooks]);
+  useEffect(() => storage.setSelfPortrait(selfPortrait), [selfPortrait]);
+  useEffect(() => storage.setTryOnCache(tryOnCache), [tryOnCache]);
 
   // —— Actions ——
   const setGender = (g: Gender) => {
@@ -98,6 +108,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  const setSelfPortrait = (d: string | null) => setSelfPortraitState(d);
+  const setTryOnCacheEntry = (key: string, dataUrl: string) =>
+    setTryOnCacheState((prev) => ({ ...prev, [key]: dataUrl }));
+
   const resetAll = () => {
     storage.clearAll();
     setGenderState(null);
@@ -107,6 +121,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setHistory([]);
     setCurrentTrip(null);
     setWeatherState([]);
+    setSelfPortraitState(null);
+    setTryOnCacheState({});
   };
 
   const value = useMemo<AppState>(
@@ -128,9 +144,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       pushHistory,
       currentTrip,
       setCurrentTrip,
+      selfPortrait,
+      setSelfPortrait,
+      tryOnCache,
+      setTryOnCacheEntry,
       resetAll,
     }),
-    [gender, city, weather, wardrobe, favoriteLooks, history, currentTrip],
+    [gender, city, weather, wardrobe, favoriteLooks, history, currentTrip, selfPortrait, tryOnCache],
   );
 
   return <AppCtx.Provider value={value}>{children}</AppCtx.Provider>;

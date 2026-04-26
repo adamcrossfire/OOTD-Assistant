@@ -4,11 +4,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../store';
 import { WeatherCard } from '../components/WeatherCard';
 import { LookCard } from '../components/LookCard';
+import { TryOnDialog } from '../components/TryOnDialog';
 import { Logo } from '../components/Logo';
 import { recommendLooks } from '../lib/style-engine';
 import { getWeatherByCity } from '../lib/weather-api';
 import type { Occasion, DressCode, Style, Look, Weather } from '../types';
-import { Sparkles, RefreshCw, Settings2, User, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Sparkles, RefreshCw, Settings2, User, Camera, Trash2 } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -57,9 +58,40 @@ const OCCASION_TO_DC: Record<Occasion, DressCode> = {
 };
 
 export function Daily() {
-  const { wardrobe, saveFavorite, removeFavorite, pushHistory, city, setCity, weather, setWeather, gender, favoriteLooks, history, resetAll } = useApp();
+  const {
+    wardrobe,
+    saveFavorite,
+    removeFavorite,
+    pushHistory,
+    city,
+    setCity,
+    weather,
+    setWeather,
+    gender,
+    favoriteLooks,
+    history,
+    resetAll,
+    selfPortrait,
+    setSelfPortrait,
+  } = useApp();
   const [accountOpen, setAccountOpen] = useState(false);
+  const [tryOnLook, setTryOnLook] = useState<Look | null>(null);
+  const [tryOnOpen, setTryOnOpen] = useState(false);
   const { toast } = useToast();
+
+  // 本人照片上传处理
+  const handleSelfUpload = (file: File) => {
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: '照片超过 5MB', description: '请换小一点的全身照' });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setSelfPortrait(reader.result as string);
+      toast({ title: '本人照片已保存', description: '试穿时可切换到本人模式' });
+    };
+    reader.readAsDataURL(file);
+  };
 
   const [loadingWeather, setLoadingWeather] = useState(false);
   const [occasion, setOccasion] = useState<Occasion>('commute');
@@ -202,6 +234,58 @@ export function Daily() {
             <div className="text-xs text-muted-foreground space-y-1 px-1">
               <div>性别：{gender === 'female' ? '女士' : '男士'}</div>
               <div>默认城市：{city}</div>
+            </div>
+
+            {/* 本人照片 —— 一键试穿可选增强 */}
+            <div className="rounded-xl border border-card-border p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-medium">本人试穿照片</div>
+                  <div className="text-[11px] text-muted-foreground">
+                    {selfPortrait ? '已上传，试穿时可切换为本人模式' : '可选：上传后 AI 会把搭配穿到你身上'}
+                  </div>
+                </div>
+                {selfPortrait && (
+                  <img
+                    src={selfPortrait}
+                    alt="本人"
+                    className="h-12 w-12 rounded-lg object-cover border border-card-border"
+                  />
+                )}
+              </div>
+              <div className="flex gap-2">
+                <label
+                  htmlFor="self-upload-input"
+                  className="flex-1 py-2 rounded-lg bg-secondary text-secondary-foreground text-xs font-medium flex items-center justify-center gap-1 cursor-pointer hover-elevate"
+                  data-testid="label-upload-self"
+                >
+                  <Camera className="h-3.5 w-3.5" /> {selfPortrait ? '重新上传' : '上传正面全身照'}
+                </label>
+                <input
+                  id="self-upload-input"
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleSelfUpload(f);
+                    e.target.value = '';
+                  }}
+                  data-testid="input-upload-self"
+                />
+                {selfPortrait && (
+                  <button
+                    onClick={() => {
+                      setSelfPortrait(null);
+                      toast({ title: '已删除本人照片' });
+                    }}
+                    className="py-2 px-3 rounded-lg border border-card-border text-xs text-muted-foreground hover-elevate"
+                    data-testid="button-delete-self"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
             <button
               data-testid="button-reset-data"
@@ -346,20 +430,49 @@ export function Daily() {
                 pushHistory(l);
                 toast({ title: '今日就穿它', description: '已加入穿搭日历' });
               }}
+              onTryOn={(l) => {
+                setTryOnLook(l);
+                setTryOnOpen(true);
+              }}
               onRefresh={() => setSeed((n) => n + 1)}
             />
           )}
         </section>
       </div>
+
+      {/* 一键试穿浮窗 */}
+      <TryOnDialog
+        look={tryOnLook}
+        open={tryOnOpen}
+        onOpenChange={setTryOnOpen}
+        liked={tryOnLook ? favoriteLooks.some((f) => f.id === tryOnLook.id) : false}
+        onLike={() => {
+          if (!tryOnLook) return;
+          const isLiked = favoriteLooks.some((f) => f.id === tryOnLook.id);
+          if (isLiked) {
+            removeFavorite(tryOnLook.id);
+            toast({ title: '已取消收藏' });
+          } else {
+            saveFavorite(tryOnLook);
+            toast({ title: '已收藏', description: '可以在「收藏」里查看' });
+          }
+        }}
+        onWear={() => {
+          if (!tryOnLook) return;
+          pushHistory(tryOnLook);
+          toast({ title: '今日就穿它', description: '已加入穿搭日历' });
+        }}
+      />
     </div>
   );
 }
 
 // ============================================================
-// LookSwiper —— 单卡左右滑动切换器
-// • 手机：手势滑动（touch）+ 鼠标拖拽（pointer）
-// • 桌面：可点左右箭头切换 + 键盘 ← / →
-// • 底部分页点可跳转指定套
+// LookSwiper —— 纯手势滑动卡片切换器
+// • 主要交互：手指左右滑动（手机）/ 鼠标拖拽（桌面）
+// • 底部分页点仅作为位置指示器（不可点击，避免误耉）
+// • 边缘带弹性阻尼手感（overflow 后拖拽距离变短）
+// • 桌面补充：键盘 ← / → 切换（不占用视觉空间）
 // ============================================================
 function LookSwiper({
   looks,
@@ -368,6 +481,7 @@ function LookSwiper({
   favoriteIds,
   onLike,
   onWear,
+  onTryOn,
   onRefresh,
 }: {
   looks: Look[];
@@ -376,6 +490,7 @@ function LookSwiper({
   favoriteIds: string[];
   onLike: (l: Look) => void;
   onWear: (l: Look) => void;
+  onTryOn: (l: Look) => void;
   onRefresh: () => void;
 }) {
   const safeIdx = Math.min(activeIdx, looks.length - 1);
@@ -384,12 +499,12 @@ function LookSwiper({
   // 手势状态
   const [dragX, setDragX] = useState(0);
   const [dragging, setDragging] = useState(false);
-  const startX = useMemo(() => ({ current: 0 }), []);
+  const startX = useMemo(() => ({ current: 0, y: 0, locked: false as 'h' | 'v' | false, w: 0 }), []);
 
   const goPrev = () => setActiveIdx(Math.max(0, safeIdx - 1));
   const goNext = () => setActiveIdx(Math.min(total - 1, safeIdx + 1));
 
-  // 键盘左右切换
+  // 键盘左右切换（桌面补充交互，不占用视觉空间）
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'ArrowLeft') goPrev();
@@ -403,36 +518,61 @@ function LookSwiper({
   const handlePointerDown = (e: React.PointerEvent) => {
     setDragging(true);
     startX.current = e.clientX;
+    startX.y = e.clientY;
+    startX.locked = false;
+    startX.w = (e.currentTarget as HTMLElement).offsetWidth;
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
   };
   const handlePointerMove = (e: React.PointerEvent) => {
     if (!dragging) return;
-    setDragX(e.clientX - startX.current);
+    const dx = e.clientX - startX.current;
+    const dy = e.clientY - startX.y;
+
+    // 锁定主轴：如果用户是垂直滚动，不拦截页面滚动
+    if (!startX.locked) {
+      if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+        startX.locked = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
+      }
+    }
+    if (startX.locked === 'v') return; // 垂直滚动交给页面
+
+    // 边缘项拖拽阻尼（超出边界后距离减半）
+    let effective = dx;
+    if ((safeIdx === 0 && dx > 0) || (safeIdx === total - 1 && dx < 0)) {
+      effective = dx * 0.35;
+    }
+    setDragX(effective);
   };
   const handlePointerUp = () => {
     if (!dragging) return;
     setDragging(false);
-    const threshold = 60;
-    if (dragX > threshold) goPrev();
-    else if (dragX < -threshold) goNext();
+    const w = startX.w || 1;
+    // 阈值：超过卡片宽 18% 即触发切换（手感轻快）
+    const ratio = dragX / w;
+    if (ratio > 0.18) goPrev();
+    else if (ratio < -0.18) goNext();
     setDragX(0);
+    startX.locked = false;
   };
 
   return (
     <div className="select-none">
-      {/* 滑动区域 */}
+      {/* 滑动区域 —— 用户可以在这里任意处按住拖动 */}
       <div
-        className="relative overflow-hidden"
+        className="relative overflow-hidden touch-pan-y"
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
+        style={{ cursor: dragging ? 'grabbing' : 'grab' }}
       >
         <div
           className="flex"
           style={{
             transform: `translateX(calc(${-safeIdx * 100}% + ${dragX}px))`,
-            transition: dragging ? 'none' : 'transform 280ms cubic-bezier(0.22, 1, 0.36, 1)',
+            transition: dragging
+              ? 'none'
+              : 'transform 320ms cubic-bezier(0.22, 1, 0.36, 1)',
           }}
         >
           {looks.map((l) => (
@@ -443,54 +583,36 @@ function LookSwiper({
                 hideDislike
                 onLike={() => onLike(l)}
                 onWear={() => onWear(l)}
+                onTryOn={() => onTryOn(l)}
               />
             </div>
           ))}
         </div>
       </div>
 
-      {/* 底部分页点 + 换一批 */}
-      <div className="mt-3 flex items-center justify-between">
-        <button
-          data-testid="button-swiper-prev"
-          onClick={goPrev}
-          disabled={safeIdx === 0}
-          className="p-2 rounded-full hover-elevate disabled:opacity-30 disabled:pointer-events-none"
-          aria-label="上一套"
+      {/* 底部分页点 —— 仅作为位置指示器 */}
+      {total > 1 && (
+        <div
+          className="mt-4 flex items-center justify-center gap-1.5"
+          aria-label={`共 ${total} 套，当前第 ${safeIdx + 1} 套`}
         >
-          <ChevronLeft className="h-4 w-4" />
-        </button>
-
-        <div className="flex items-center gap-1.5">
           {looks.map((_, i) => (
-            <button
+            <span
               key={i}
-              data-testid={`button-swiper-dot-${i}`}
-              onClick={() => setActiveIdx(i)}
-              className={`h-1.5 rounded-full transition-all ${
-                i === safeIdx ? 'w-5 bg-primary' : 'w-1.5 bg-muted-foreground/30'
+              data-testid={`indicator-dot-${i}`}
+              className={`h-1.5 rounded-full transition-all duration-300 ${
+                i === safeIdx ? 'w-6 bg-primary' : 'w-1.5 bg-muted-foreground/25'
               }`}
-              aria-label={`第 ${i + 1} 套`}
             />
           ))}
         </div>
-
-        <button
-          data-testid="button-swiper-next"
-          onClick={goNext}
-          disabled={safeIdx === total - 1}
-          className="p-2 rounded-full hover-elevate disabled:opacity-30 disabled:pointer-events-none"
-          aria-label="下一套"
-        >
-          <ChevronRight className="h-4 w-4" />
-        </button>
-      </div>
+      )}
 
       {/* 换一批（全部重新生成） */}
       <button
         data-testid="button-regenerate-all"
         onClick={onRefresh}
-        className="mt-3 w-full py-2.5 rounded-xl border border-card-border text-sm text-muted-foreground hover-elevate flex items-center justify-center gap-1.5"
+        className="mt-4 w-full py-2.5 rounded-xl border border-card-border text-sm text-muted-foreground hover-elevate flex items-center justify-center gap-1.5"
       >
         <RefreshCw className="h-3.5 w-3.5" /> 换一批搭配
       </button>

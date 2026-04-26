@@ -1,10 +1,17 @@
 // 收藏的搭配
+import { useState } from 'react';
 import { useApp } from '../store';
 import { LookCard } from '../components/LookCard';
+import { TryOnDialog } from '../components/TryOnDialog';
+import type { Look } from '../types';
 import { Heart } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 export function Favorites() {
-  const { favoriteLooks, removeFavorite } = useApp();
+  const { favoriteLooks, removeFavorite, saveFavorite, pushHistory } = useApp();
+  const [tryOnLook, setTryOnLook] = useState<Look | null>(null);
+  const [tryOnOpen, setTryOnOpen] = useState(false);
+  const { toast } = useToast();
 
   return (
     <div className="flex-1 overflow-y-auto pb-4">
@@ -31,10 +38,41 @@ export function Favorites() {
               liked
               hideDislike
               onLike={() => removeFavorite(l.id)}
+              onWear={() => {
+                pushHistory(l);
+                toast({ title: '今日就穿它', description: '已加入穿搭日历' });
+              }}
+              onTryOn={() => {
+                setTryOnLook(l);
+                setTryOnOpen(true);
+              }}
             />
           ))
         )}
       </div>
+
+      <TryOnDialog
+        look={tryOnLook}
+        open={tryOnOpen}
+        onOpenChange={setTryOnOpen}
+        liked={tryOnLook ? favoriteLooks.some((f) => f.id === tryOnLook.id) : false}
+        onLike={() => {
+          if (!tryOnLook) return;
+          const isLiked = favoriteLooks.some((f) => f.id === tryOnLook.id);
+          if (isLiked) {
+            removeFavorite(tryOnLook.id);
+            toast({ title: '已取消收藏' });
+          } else {
+            saveFavorite(tryOnLook);
+            toast({ title: '已收藏' });
+          }
+        }}
+        onWear={() => {
+          if (!tryOnLook) return;
+          pushHistory(tryOnLook);
+          toast({ title: '今日就穿它' });
+        }}
+      />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 // 搭配 Look 卡片 —— 上半部分平铺九宫格 + 下半部分单品列表
 import type { Look } from '../types';
-import { Heart, X, Check, AlertCircle } from 'lucide-react';
+import { Heart, X, Check, AlertCircle, Sparkles } from 'lucide-react';
 
 interface Props {
   look: Look;
@@ -9,6 +9,7 @@ interface Props {
   onLike?: () => void;
   onDislike?: () => void;
   onWear?: () => void;
+  onTryOn?: () => void;
   /** 是否隐藏“换一批”按钮（滑动模式下不需要） */
   hideDislike?: boolean;
 }
@@ -27,7 +28,15 @@ const SCORE_COLOR = (s: number) => {
   return 'hsl(24 8% 42%)';
 };
 
-export function LookCard({ look, liked = false, onLike, onDislike, onWear, hideDislike = false }: Props) {
+export function LookCard({
+  look,
+  liked = false,
+  onLike,
+  onDislike,
+  onWear,
+  onTryOn,
+  hideDislike = false,
+}: Props) {
   return (
     <article
       className="
@@ -108,50 +117,57 @@ export function LookCard({ look, liked = false, onLike, onDislike, onWear, hideD
         ))}
       </ul>
 
-      {/* 操作按钮 */}
-      {(onLike || onDislike || onWear) && (
-        <div
-          className={`grid border-t border-card-border ${
-            hideDislike ? 'grid-cols-2' : 'grid-cols-3'
-          }`}
-        >
-          {!hideDislike && (
+      {/* 操作按钮 —— 一键试穿 / 收藏 / 就穿它三列，可选加上“换一批”在顶部 */}
+      {(onLike || onDislike || onWear || onTryOn) && (
+        <div className="flex flex-col">
+          {!hideDislike && onDislike && (
             <button
               data-testid="button-look-dislike"
               onClick={onDislike}
-              className="py-3 flex items-center justify-center gap-1.5 text-sm text-muted-foreground hover-elevate"
+              className="py-2.5 flex items-center justify-center gap-1.5 text-sm text-muted-foreground hover-elevate border-t border-card-border"
             >
               <X className="h-4 w-4" /> 换一批
             </button>
           )}
-          <button
-            data-testid="button-look-like"
-            onClick={onLike}
-            aria-pressed={liked}
-            className={`py-3 flex items-center justify-center gap-1.5 text-sm hover-elevate ${
-              hideDislike ? '' : 'border-l border-r border-card-border'
-            } ${
-              liked
-                ? 'text-[hsl(0_72%_55%)] font-semibold'
-                : 'text-muted-foreground'
+          <div
+            className={`grid border-t border-card-border ${
+              onTryOn ? 'grid-cols-3' : 'grid-cols-2'
             }`}
           >
-            <Heart
-              className="h-4 w-4"
-              fill={liked ? 'currentColor' : 'none'}
-              strokeWidth={liked ? 0 : 2}
-            />
-            {liked ? '已收藏' : '收藏'}
-          </button>
-          <button
-            data-testid="button-look-wear"
-            onClick={onWear}
-            className={`py-3 flex items-center justify-center gap-1.5 text-sm font-semibold text-primary hover-elevate ${
-              hideDislike ? 'border-l border-card-border' : ''
-            }`}
-          >
-            <Check className="h-4 w-4" /> 就穿它
-          </button>
+            {onTryOn && (
+              <button
+                data-testid="button-look-tryon"
+                onClick={onTryOn}
+                className="py-3 flex items-center justify-center gap-1 text-sm text-primary font-medium hover-elevate"
+              >
+                <Sparkles className="h-4 w-4" /> 一键试穿
+              </button>
+            )}
+            <button
+              data-testid="button-look-like"
+              onClick={onLike}
+              aria-pressed={liked}
+              className={`py-3 flex items-center justify-center gap-1 text-sm hover-elevate border-l border-card-border ${
+                liked
+                  ? 'text-[hsl(0_72%_55%)] font-semibold'
+                  : 'text-muted-foreground'
+              }`}
+            >
+              <Heart
+                className="h-4 w-4"
+                fill={liked ? 'currentColor' : 'none'}
+                strokeWidth={liked ? 0 : 2}
+              />
+              {liked ? '已收藏' : '收藏'}
+            </button>
+            <button
+              data-testid="button-look-wear"
+              onClick={onWear}
+              className="py-3 flex items-center justify-center gap-1 text-sm font-semibold text-primary hover-elevate border-l border-card-border"
+            >
+              <Check className="h-4 w-4" /> 就穿它
+            </button>
+          </div>
         </div>
       )}
     </article>

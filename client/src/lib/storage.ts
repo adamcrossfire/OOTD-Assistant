@@ -53,6 +53,14 @@ export const storage = {
   getFavorites: () => readKey<Look[]>('favorites', []),
   setFavorites: (looks: Look[]) => writeKey('favorites', looks),
 
+  // ---------- 本人照片（一键试穿用） ----------
+  getSelfPortrait: () => readKey<string | null>('selfPortrait', null),
+  setSelfPortrait: (dataUrl: string | null) => writeKey('selfPortrait', dataUrl),
+
+  // ---------- 试穿生成图缓存（key = lookId:mode）---------- 
+  getTryOnCache: () => readKey<Record<string, string>>('tryOnCache', {}),
+  setTryOnCache: (m: Record<string, string>) => writeKey('tryOnCache', m),
+
   // ---------- 历史 Look（最近30天） ----------
   getHistory: () => readKey<Look[]>('history', []),
   pushHistory: (l: Look) => {
