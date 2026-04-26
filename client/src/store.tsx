@@ -9,6 +9,7 @@ import { createContext, useContext, useState, useMemo, useEffect, ReactNode } fr
 import type { Gender, Item, Look, SavedTrip, Trip, Weather } from './types';
 import { getMockItems } from './lib/mock-data';
 import { storage } from './lib/storage';
+import type { StylePack } from '../../shared/styles-library';
 
 interface AppState {
   // 用户基础
@@ -51,6 +52,11 @@ interface AppState {
   tryOnCache: Record<string, string>;     // key = `${lookId}:${mode}`
   setTryOnCacheEntry: (key: string, dataUrl: string) => void;
 
+  // 自定义风格包（从小红书截图导入的）
+  customStyles: StylePack[];
+  addCustomStyle: (s: StylePack) => void;
+  removeCustomStyle: (id: string) => void;
+
   // 重置（设置页 / 切换性别用）
   resetAll: () => void;
 }
@@ -74,6 +80,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [savedTrips, setSavedTrips] = useState<SavedTrip[]>(() => storage.getSavedTrips());
   const [selfPortrait, setSelfPortraitState] = useState<string | null>(() => storage.getSelfPortrait());
   const [tryOnCache, setTryOnCacheState] = useState<Record<string, string>>(() => storage.getTryOnCache());
+  const [customStyles, setCustomStyles] = useState<StylePack[]>(() => storage.getCustomStyles());
 
   // —— 自动持久化 ——
   useEffect(() => storage.setGender(gender), [gender]);
@@ -83,6 +90,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => storage.setSelfPortrait(selfPortrait), [selfPortrait]);
   useEffect(() => storage.setTryOnCache(tryOnCache), [tryOnCache]);
   useEffect(() => storage.setSavedTrips(savedTrips), [savedTrips]);
+  useEffect(() => storage.setCustomStyles(customStyles), [customStyles]);
 
   // —— Actions ——
   const setGender = (g: Gender) => {
@@ -120,6 +128,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const removeSavedTrip = (id: string) =>
     setSavedTrips((prev) => prev.filter((t) => t.id !== id));
 
+  const addCustomStyle = (s: StylePack) =>
+    setCustomStyles((prev) => [s, ...prev.filter((p) => p.id !== s.id)]);
+  const removeCustomStyle = (id: string) =>
+    setCustomStyles((prev) => prev.filter((s) => s.id !== id));
+
   const setSelfPortrait = (d: string | null) => setSelfPortraitState(d);
   const setTryOnCacheEntry = (key: string, dataUrl: string) =>
     setTryOnCacheState((prev) => ({ ...prev, [key]: dataUrl }));
@@ -136,6 +149,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setWeatherState([]);
     setSelfPortraitState(null);
     setTryOnCacheState({});
+    setCustomStyles([]);
   };
 
   const value = useMemo<AppState>(
@@ -164,9 +178,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setSelfPortrait,
       tryOnCache,
       setTryOnCacheEntry,
+      customStyles,
+      addCustomStyle,
+      removeCustomStyle,
       resetAll,
     }),
-    [gender, city, weather, wardrobe, favoriteLooks, history, currentTrip, savedTrips, selfPortrait, tryOnCache],
+    [gender, city, weather, wardrobe, favoriteLooks, history, currentTrip, savedTrips, selfPortrait, tryOnCache, customStyles],
   );
 
   return <AppCtx.Provider value={value}>{children}</AppCtx.Provider>;

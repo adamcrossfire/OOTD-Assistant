@@ -4,7 +4,7 @@ import { useApp } from '../store';
 import { planTrip, planTripFromLocked } from '../lib/style-engine';
 import { getMockWeather } from '../lib/mock-data';
 import { searchCity, fetchWeather, CityResult } from '../lib/weather-api';
-import type { Look, Item, Style, Weather, SavedTrip } from '../types';
+import type { Look, Item, Style, Weather, SavedTrip, Category } from '../types';
 import {
   Luggage, MapPin, Sparkles, ChevronDown, ChevronUp, Lock, Sun, Cloud, CloudRain,
   Loader2, Bookmark, X,
@@ -201,14 +201,17 @@ export function Travel() {
               mode === 'from-locked' ? 'bg-foreground text-background' : 'text-muted-foreground hover-elevate'
             }`}
           >
-            从必带单品
+            从单品生成
           </button>
         </div>
-        <p className="mt-1.5 text-[11px] text-muted-foreground leading-relaxed">
-          {mode === 'smart'
-            ? '根据目的地、天气、风格偏好，从全衣橱挑选并搭配'
-            : '只在你选的必带单品里轮换搭配（适合精打细算的精简党）'}
-        </p>
+        <div className="mt-2 px-3 py-2 rounded-lg bg-primary/5 border border-primary/15">
+          <p className="text-[13px] leading-relaxed text-foreground">
+            <span className="font-semibold text-primary">{mode === 'smart' ? '智能推荐：' : '从单品生成：'}</span>
+            {mode === 'smart'
+              ? '根据目的地、天气、风格偏好，从全衣橱挑选并搭配'
+              : '只在你选的单品里轮换搭配（适合精打细算的精简党）'}
+          </p>
+        </div>
       </header>
 
       <div className="px-5 pt-4 space-y-5">
@@ -346,7 +349,7 @@ export function Travel() {
           >
             <span className="flex items-center gap-2 text-sm">
               <Lock className="h-4 w-4 text-muted-foreground" />
-              {mode === 'from-locked' ? '必选 · 必带单品' : '必带单品（选填）'}
+              {mode === 'from-locked' ? '必选 · 单品' : '必带单品（选填）'}
               <span className={`text-xs ${lockedIds.length > 0 ? 'text-primary font-semibold' : 'text-muted-foreground'}`}>
                 ({lockedIds.length})
               </span>
@@ -357,27 +360,60 @@ export function Travel() {
             <p className="mt-1.5 text-[11px] text-primary">此模式下至少要选 1 件单品才能生成</p>
           )}
           {showLockPicker && (
-            <div className="mt-2 grid grid-cols-4 gap-2 p-2 rounded-xl bg-card border border-card-border">
-              {wardrobe.map((it) => {
-                const locked = lockedIds.includes(it.id);
+            <div className="mt-2 p-3 rounded-xl bg-card border border-card-border space-y-3">
+              {([
+                { key: 'top-group', label: '上衣', match: (c: Category) => c === 'top' || c === 'outer' || c === 'dress' },
+                { key: 'bottom-group', label: '裤子', match: (c: Category) => c === 'bottom' },
+                { key: 'shoes-group', label: '鞋子', match: (c: Category) => c === 'shoes' },
+              ] as const).map((group) => {
+                const items = wardrobe.filter((it) => group.match(it.category));
                 return (
-                  <button
-                    key={it.id}
-                    data-testid={`lock-${it.id}`}
-                    onClick={() => toggleLock(it.id)}
-                    className={`relative aspect-square rounded-lg overflow-hidden border-2 hover-elevate ${
-                      locked ? 'border-primary' : 'border-transparent'
-                    }`}
-                  >
-                    <img src={it.photoUrl} alt={it.subCategory} className="w-full h-full object-contain bg-[hsl(36_25%_95%)] dark:bg-[hsl(24_8%_12%)] p-1" />
-                    {locked && (
-                      <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-primary text-primary-foreground text-[10px] flex items-center justify-center">
-                        ✓
-                      </span>
+                  <div key={group.key} className="flex items-center gap-3">
+                    <div className="shrink-0 w-10 text-center">
+                      <span className="text-xs font-semibold text-foreground">{group.label}</span>
+                    </div>
+                    {items.length === 0 ? (
+                      <div className="flex-1 text-[11px] text-muted-foreground py-3 text-center bg-[hsl(36_25%_95%)] dark:bg-[hsl(24_8%_12%)] rounded-lg">
+                        衣橱里还没有{group.label}
+                      </div>
+                    ) : (
+                      <div
+                        data-testid={`lock-row-${group.key}`}
+                        className="flex-1 flex gap-2 overflow-x-auto pb-1 -mr-1 pr-1 snap-x"
+                        style={{ scrollbarWidth: 'thin' }}
+                      >
+                        {items.map((it) => {
+                          const locked = lockedIds.includes(it.id);
+                          return (
+                            <button
+                              key={it.id}
+                              data-testid={`lock-${it.id}`}
+                              onClick={() => toggleLock(it.id)}
+                              className={`relative shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 hover-elevate snap-start ${
+                                locked ? 'border-primary' : 'border-transparent'
+                              }`}
+                            >
+                              <img
+                                src={it.photoUrl}
+                                alt={it.subCategory}
+                                className="w-full h-full object-contain bg-[hsl(36_25%_95%)] dark:bg-[hsl(24_8%_12%)] p-1"
+                              />
+                              {locked && (
+                                <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-primary text-primary-foreground text-[10px] flex items-center justify-center">
+                                  ✓
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
                     )}
-                  </button>
+                  </div>
                 );
               })}
+              <p className="text-[10px] text-muted-foreground pl-1">
+                左右滑动浏览，点击勾选·配饰不在这里，如需以后可手动添加
+              </p>
             </div>
           )}
         </section>

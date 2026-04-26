@@ -8,6 +8,7 @@
 // ============================================================
 
 import type { Look, Weather, Occasion } from '../types';
+import type { StylePack } from '../../../shared/styles-library';
 
 /** 场合中文映射 */
 const OCCASION_LABEL: Record<Occasion, string> = {
@@ -49,6 +50,7 @@ function pick<T>(arr: T[]): T {
 async function callRemoteStylist(
   look: Look,
   weather: { temp: number; condition?: Weather['condition'] },
+  stylePack?: StylePack | null,
 ): Promise<string | null> {
   try {
     const r = await fetch('/api/stylist', {
@@ -69,6 +71,9 @@ async function callRemoteStylist(
           temp: weather.temp,
           condition: weather.condition,
         },
+        stylePack: stylePack
+          ? { name: stylePack.name, description: stylePack.description, keywords: stylePack.keywords }
+          : null,
       }),
     });
     if (!r.ok) return null;
@@ -121,13 +126,15 @@ function localStylistTemplate(
 export async function generateStylistComment(
   look: Look,
   weather: { temp: number; condition?: Weather['condition'] },
+  stylePack?: StylePack | null,
 ): Promise<string> {
-  const remote = await callRemoteStylist(look, weather);
+  const remote = await callRemoteStylist(look, weather, stylePack);
   if (remote) return remote;
 
   // 本地兜底：模拟原有 300ms 延迟，保持 UI 节奏一致
   await new Promise((r) => setTimeout(r, 300));
-  return localStylistTemplate(look, weather);
+  const base = localStylistTemplate(look, weather);
+  return stylePack ? `《${stylePack.name}》· ${base}` : base;
 }
 
 function mostCommon<T>(arr: T[]): T {

@@ -11,6 +11,7 @@
 // ============================================================
 
 import type { Gender, Item, Look, SavedTrip } from '../types';
+import type { StylePack } from '../../../shared/styles-library';
 
 const NS = 'ootd:v1:';
 
@@ -72,6 +73,10 @@ export const storage = {
     list.unshift(l);
     writeKey('history', list.slice(0, 50));
   },
+
+  // ---------- 自定义风格包（Phase 2 截图导入的） ----------
+  getCustomStyles: () => readKey<StylePack[]>('customStyles', []),
+  setCustomStyles: (s: StylePack[]) => writeKey('customStyles', s),
 
   // ---------- 全部清除（设置页用） ----------
   clearAll: () => {

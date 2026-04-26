@@ -2,9 +2,9 @@
 import { useMemo, useState, useRef } from 'react';
 import { useApp } from '../store';
 import type { Category, Item, Season, Style, DressCode } from '../types';
-import { Plus, Camera, Image as ImageIcon, X, Trash2, Sparkles, Loader2 } from 'lucide-react';
+import { Plus, Camera, Image as ImageIcon, X, Trash2, Sparkles, Loader2, ScanLine, CheckSquare, Square } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { detectClothing } from '../lib/vision-api';
+import { detectClothing, batchExtractFromScreenshot, type DetectionResult } from '../lib/vision-api';
 
 // 根据性别返回可选分类——男士隐藏「连衣裙」
 const getCats = (gender: 'female' | 'male' | null): { value: Category | 'all'; label: string }[] => {
@@ -46,6 +46,7 @@ export function Wardrobe() {
   const { wardrobe, gender, addItem, removeItem } = useApp();
   const [filter, setFilter] = useState<Category | 'all'>('all');
   const [showAdd, setShowAdd] = useState(false);
+  const [showBatch, setShowBatch] = useState(false);
   const CATS = getCats(gender);
 
   const filtered = useMemo(() => {
@@ -64,13 +65,24 @@ export function Wardrobe() {
               共 {wardrobe.length} 件 · {gender === 'female' ? '女士' : '男士'}
             </p>
           </div>
-          <button
-            data-testid="button-add-item"
-            onClick={() => setShowAdd(true)}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-primary text-primary-foreground text-sm font-semibold hover-elevate"
-          >
-            <Plus className="h-4 w-4" /> 添加
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              data-testid="button-batch-import"
+              onClick={() => setShowBatch(true)}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-card border border-card-border text-sm font-medium hover-elevate"
+            >
+              <ScanLine className="h-4 w-4 text-primary" />
+              <span className="hidden sm:inline">截图导入</span>
+              <span className="sm:hidden">截图</span>
+            </button>
+            <button
+              data-testid="button-add-item"
+              onClick={() => setShowAdd(true)}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-primary text-primary-foreground text-sm font-semibold hover-elevate"
+            >
+              <Plus className="h-4 w-4" /> 添加
+            </button>
+          </div>
         </div>
         {/* 分类筛选 chip */}
         <div className="flex gap-1.5 overflow-x-auto -mx-1 px-1 pb-1">
@@ -123,6 +135,16 @@ export function Wardrobe() {
           onAdd={(it) => {
             addItem(it);
             setShowAdd(false);
+          }}
+        />
+      )}
+
+      {showBatch && (
+        <BatchImportSheet
+          onClose={() => setShowBatch(false)}
+          onImport={(items) => {
+            items.forEach((it) => addItem(it));
+            setShowBatch(false);
           }}
         />
       )}
@@ -505,3 +527,264 @@ function AddItemSheet({ onClose, onAdd }: { onClose: () => void; onAdd: (i: Item
     </div>
   );
 }
+
+
+// ==========================================================
+// 批量导入：上传 1 张订单/购物车/商品列表截图，AI 识别多件衣物
+// ==========================================================
+function BatchImportSheet({
+  onClose,
+  onImport,
+}: {
+  onClose: () => void;
+  onImport: (items: Item[]) => void;
+}) {
+  const { gender } = useApp();
+  const { toast } = useToast();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [screenshot, setScreenshot] = useState<string>('');
+  const [analyzing, setAnalyzing] = useState(false);
+  const [results, setResults] = useState<DetectionResult[]>([]);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [error, setError] = useState<string>('');
+
+  const COLOR_HEX: Record<Item['colorFamily'], string> = {
+    warm: '#d2a679', cool: '#5a7693', neutral: '#9a948a',
+    black: '#1a1a1a', white: '#fafafa',
+  };
+
+  const FAMILY_CN: Record<Item['colorFamily'], string> = {
+    warm: '暖色', cool: '冷色', neutral: '中性', black: '黑色', white: '白色',
+  };
+
+  const handleFile = (f: File) => {
+    setError('');
+    setResults([]);
+    setSelected(new Set());
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const dataUrl = reader.result as string;
+      setScreenshot(dataUrl);
+      setAnalyzing(true);
+      try {
+        const r = await batchExtractFromScreenshot(dataUrl);
+        // 男士过滤掉连衣裙
+        const filtered = gender === 'male' ? r.items.filter((it) => it.category !== 'dress') : r.items;
+        setResults(filtered);
+        if (r.source === 'fallback') {
+          setError(r.fallbackReason ?? '识别服务暂不可用');
+        } else if (filtered.length === 0) {
+          setError('图中没有识别到衣物商品，换张更清晰的截图试试？');
+        } else {
+          setSelected(new Set(filtered.map((_, i) => i)));
+          toast({
+            title: `识别到 ${filtered.length} 件商品`,
+            description: '勾选要导入的，点击下方按钮一键加入衣橱',
+          });
+        }
+      } finally {
+        setAnalyzing(false);
+      }
+    };
+    reader.readAsDataURL(f);
+  };
+
+  const toggleOne = (i: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    if (selected.size === results.length) setSelected(new Set());
+    else setSelected(new Set(results.map((_, i) => i)));
+  };
+
+  const handleImport = () => {
+    if (selected.size === 0) {
+      toast({ title: '请至少勾选 1 件' });
+      return;
+    }
+    const cats = getCats(gender);
+    const items: Item[] = [];
+    results.forEach((r, i) => {
+      if (!selected.has(i)) return;
+      // 男士兜底：dress → top
+      const safeCategory =
+        gender === 'male' && r.category === 'dress'
+          ? 'top'
+          : (cats.find((c) => c.value === r.category) ? r.category : 'top');
+      items.push({
+        id: `b-${Date.now()}-${i}`,
+        // 用截图当占位图（用户后续可单独替换为商品图）
+        photoUrl: screenshot,
+        category: safeCategory as Category,
+        subCategory: r.subCategory || '单品',
+        color: r.color || COLOR_HEX[r.colorFamily],
+        colorFamily: r.colorFamily,
+        pattern: 'solid',
+        season: r.season,
+        styles: r.styles.length ? r.styles : ['minimal'],
+        dressCodes: ['casual'],
+        wearCount: 0,
+      });
+    });
+    onImport(items);
+    toast({ title: `已加入 ${items.length} 件`, description: '可在衣橱里手动微调或替换图片' });
+  };
+
+  return (
+    <div className="fixed inset-0 z-40 bg-black/50 flex items-end md:items-center justify-center" onClick={onClose}>
+      <div
+        className="bg-card rounded-t-3xl md:rounded-3xl w-full max-w-md max-h-[90dvh] overflow-y-auto border border-card-border"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sticky top-0 bg-card border-b border-card-border px-5 py-3 flex items-center justify-between z-10">
+          <div>
+            <h2 className="text-base font-semibold flex items-center gap-2">
+              <ScanLine className="h-4 w-4 text-primary" />
+              截图批量导入
+            </h2>
+            <p className="text-[11px] text-muted-foreground">
+              上传一张订单 / 购物车 / 商品列表截图，AI 识别多件衣物
+            </p>
+          </div>
+          <button data-testid="button-close-batch" onClick={onClose} className="p-2 rounded-full hover-elevate">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => e.target.files && handleFile(e.target.files[0])}
+            data-testid="input-batch-file"
+          />
+
+          {!screenshot ? (
+            <button
+              data-testid="button-batch-upload"
+              onClick={() => fileRef.current?.click()}
+              className="w-full aspect-[4/5] rounded-2xl border-2 border-dashed border-card-border bg-[hsl(36_25%_95%)] dark:bg-[hsl(24_8%_12%)] flex flex-col items-center justify-center gap-3 hover-elevate"
+            >
+              <ImageIcon className="h-10 w-10 text-muted-foreground" strokeWidth={1.5} />
+              <p className="text-sm font-medium">点击上传截图</p>
+              <div className="text-[11px] text-muted-foreground text-center px-6 leading-relaxed">
+                支持淘宝 / 京东 / 小红书订单页 · 购物车 · 商品列表<br/>
+                一张图最多识别 12 件
+              </div>
+            </button>
+          ) : (
+            <div className="space-y-3">
+              {/* 截图预览 */}
+              <div className="relative rounded-2xl overflow-hidden bg-[hsl(36_25%_95%)] dark:bg-[hsl(24_8%_12%)]">
+                <img src={screenshot} alt="截图" className="w-full max-h-72 object-contain" />
+                {analyzing && (
+                  <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex flex-col items-center justify-center gap-2">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    <span className="text-sm font-medium">AI 正在识别商品…</span>
+                    <span className="text-[11px] text-muted-foreground">通常 5-10 秒</span>
+                  </div>
+                )}
+                <button
+                  data-testid="button-batch-rephoto"
+                  onClick={() => fileRef.current?.click()}
+                  className="absolute bottom-3 right-3 px-3 py-1.5 rounded-full bg-card text-xs border border-card-border shadow-sm hover-elevate"
+                >
+                  换一张
+                </button>
+              </div>
+
+              {/* 错误提示 */}
+              {error && !analyzing && (
+                <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3">
+                  <p className="text-xs text-destructive font-medium">{error}</p>
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    提示：本地预览环境不调真实 AI；线上部署（已配 DASHSCOPE_API_KEY）才会出结果。
+                  </p>
+                </div>
+              )}
+
+              {/* 候选列表 */}
+              {results.length > 0 && !analyzing && (
+                <>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold">识别到 {results.length} 件 · 已选 {selected.size}</h3>
+                    <button
+                      data-testid="button-toggle-all"
+                      onClick={toggleAll}
+                      className="text-xs text-primary font-semibold hover-elevate px-2 py-1 rounded"
+                    >
+                      {selected.size === results.length ? '取消全选' : '全选'}
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    {results.map((r, i) => {
+                      const checked = selected.has(i);
+                      return (
+                        <button
+                          key={i}
+                          data-testid={`batch-item-${i}`}
+                          onClick={() => toggleOne(i)}
+                          className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left hover-elevate ${
+                            checked ? 'bg-primary/5 border-primary' : 'bg-card border-card-border'
+                          }`}
+                        >
+                          <div className="shrink-0 text-primary">
+                            {checked ? <CheckSquare className="h-5 w-5" /> : <Square className="h-5 w-5 text-muted-foreground" />}
+                          </div>
+                          <span
+                            className="shrink-0 h-8 w-8 rounded-lg border border-card-border"
+                            style={{ backgroundColor: r.color }}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-semibold truncate">{r.subCategory}</span>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-secondary text-muted-foreground shrink-0">
+                                {CAT_CN[r.category]}
+                              </span>
+                            </div>
+                            <div className="mt-0.5 flex flex-wrap gap-1 text-[10px] text-muted-foreground">
+                              <span>{FAMILY_CN[r.colorFamily]}</span>
+                              <span>·</span>
+                              <span>{r.styles.map((s) => STYLE_CN[s]).join(' / ')}</span>
+                              <span>·</span>
+                              <span>置信度 {Math.round(r.confidence * 100)}%</span>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="rounded-xl bg-[hsl(36_25%_95%)] dark:bg-[hsl(24_8%_12%)] p-3">
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      💡 导入后所有勾选项会用截图作为占位图。在衣橱里点开任意一件可查看详情；要换成单独的商品图，可以删除后用「+ 添加」重新上传。
+                    </p>
+                  </div>
+
+                  <button
+                    data-testid="button-batch-confirm"
+                    onClick={handleImport}
+                    disabled={selected.size === 0}
+                    className="w-full py-3 rounded-xl bg-primary text-primary-foreground font-semibold hover-elevate active-elevate-2 disabled:opacity-50"
+                  >
+                    一键加入 {selected.size} 件到衣橱
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+

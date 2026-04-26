@@ -1,10 +1,10 @@
-// 底部双 Tab 导航：日常搭 / 出行装 / 衣橱
+// 底部 Tab 导航：衣橱 / 日常搭 / 出行装 / 收藏
 import { Sun, Luggage, Shirt, Heart } from 'lucide-react';
 import { Link, useLocation } from 'wouter';
 
 const tabs = [
-  { path: '/', label: '日常搭', icon: Sun },
   { path: '/wardrobe', label: '衣橱', icon: Shirt },
+  { path: '/', label: '日常搭', icon: Sun },
   { path: '/travel', label: '出行装', icon: Luggage },
   { path: '/favorites', label: '收藏', icon: Heart },
 ] as const;

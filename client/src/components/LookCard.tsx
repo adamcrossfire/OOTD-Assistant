@@ -12,6 +12,8 @@ interface Props {
   onTryOn?: () => void;
   /** 是否隐藏“换一批”按钮（滑动模式下不需要） */
   hideDislike?: boolean;
+  /** 当前匹配的小红书风格名（用于在卡片上显示角标） */
+  stylePackName?: string | null;
 }
 
 const SCORE_LABEL = (s: number) => {
@@ -36,6 +38,7 @@ export function LookCard({
   onWear,
   onTryOn,
   hideDislike = false,
+  stylePackName = null,
 }: Props) {
   return (
     <article
@@ -49,11 +52,23 @@ export function LookCard({
       <div className="bg-[hsl(36_25%_95%)] dark:bg-[hsl(24_8%_12%)] p-4 pb-2 relative">
         {/* 匹配度徽章 */}
         <div
-          className="absolute top-4 right-4 px-2.5 py-1 rounded-full text-[11px] font-semibold tracking-tight bg-card border border-card-border z-10"
-          style={{ color: SCORE_COLOR(look.score) }}
-          data-testid={`badge-score-${look.id}`}
+          className="absolute top-4 right-4 flex flex-col items-end gap-1 z-10"
         >
-          {look.score}% · {SCORE_LABEL(look.score)}
+          <div
+            className="px-2.5 py-1 rounded-full text-[11px] font-semibold tracking-tight bg-card border border-card-border"
+            style={{ color: SCORE_COLOR(look.score) }}
+            data-testid={`badge-score-${look.id}`}
+          >
+            {look.score}% · {SCORE_LABEL(look.score)}
+          </div>
+          {stylePackName && (
+            <div
+              className="px-2.5 py-1 rounded-full text-[11px] font-medium tracking-tight bg-primary/10 text-primary border border-primary/30"
+              data-testid={`badge-style-${look.id}`}
+            >
+              · {stylePackName}
+            </div>
+          )}
         </div>
 
         {/* 顶部选手展示主要 3 件，剩下的在列表里详细列出 */}

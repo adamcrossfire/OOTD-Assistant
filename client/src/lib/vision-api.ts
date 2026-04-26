@@ -158,3 +158,59 @@ export async function detectClothing(dataUrl: string): Promise<DetectionResult> 
 
 /** 是否启用真实视觉识别（通过环境变量自动判定，前端无需关心） */
 export const VISION_API_ENABLED = true;
+
+// ============================================================
+// 批量识别：从一张截图（订单/购物车/商品列表）提取多件衣物
+// 项目中文名称：「截图批量导入」
+// ============================================================
+
+export interface BatchDetectionResult {
+  items: DetectionResult[];
+  /** 'qwen-vl' / 'openai' / 'fallback' */
+  source: string;
+  /** 失败原因说明（仅在 fallback 时使用） */
+  fallbackReason?: string;
+}
+
+/**
+ * 从一张截图批量识别衣物。
+ * 优先调远程多模态接口，失败时返回空数组（本地无法从一张图里拆分多件商品）。
+ */
+export async function batchExtractFromScreenshot(dataUrl: string): Promise<BatchDetectionResult> {
+  try {
+    const r = await fetch('/api/vision-batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: dataUrl }),
+    });
+    const ct = r.headers.get('content-type') ?? '';
+    if (!r.ok) {
+      let reason = `服务返回 ${r.status}`;
+      if (ct.includes('application/json')) {
+        try {
+          const j = await r.json();
+          if (j?.error === 'NO_API_KEY') reason = '未配置视觉识别 API key';
+          else if (j?.detail) reason = String(j.detail).slice(0, 80);
+        } catch {}
+      }
+      return { items: [], source: 'fallback', fallbackReason: reason };
+    }
+    if (!ct.includes('application/json')) {
+      return { items: [], source: 'fallback', fallbackReason: '服务返回格式异常' };
+    }
+    const j = await r.json();
+    const itemsRaw: any[] = Array.isArray(j?.items) ? j.items : [];
+    const items: DetectionResult[] = itemsRaw.map((it) => ({
+      category: it.category as Category,
+      subCategory: String(it.subCategory ?? '单品'),
+      color: String(it.color ?? '#888888'),
+      colorFamily: it.colorFamily as Item['colorFamily'],
+      styles: (it.styles ?? []) as Style[],
+      season: (it.season ?? 'all') as Season,
+      confidence: typeof it.confidence === 'number' ? it.confidence : 0.85,
+    }));
+    return { items, source: String(j?.source ?? 'qwen-vl') };
+  } catch (e: any) {
+    return { items: [], source: 'fallback', fallbackReason: String(e?.message ?? e).slice(0, 80) };
+  }
+}

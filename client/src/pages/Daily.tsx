@@ -1,6 +1,6 @@
 // 日常搭配页：选场景 + DressCode + 风格 → 生成 3 套 Look
 // 阶段2：接入真实天气 API + LLM 风评论
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../store';
 import { WeatherCard } from '../components/WeatherCard';
 import { LookCard } from '../components/LookCard';
@@ -9,7 +9,7 @@ import { Logo } from '../components/Logo';
 import { recommendLooks } from '../lib/style-engine';
 import { getWeatherByCity } from '../lib/weather-api';
 import type { Occasion, DressCode, Style, Look, Weather } from '../types';
-import { Sparkles, RefreshCw, Settings2, User, Camera, Trash2 } from 'lucide-react';
+import { Sparkles, RefreshCw, Settings2, User, Camera, Trash2, Plus, X as XIcon, Loader2 } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -19,6 +19,8 @@ import {
 } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { generateStylistComment } from '../lib/llm-stylist';
+import { BUILTIN_STYLES, type StylePack } from '../../../shared/styles-library';
+import { extractStyleFromScreenshot } from '../lib/style-vision';
 
 const OCCASIONS: { value: Occasion; label: string; emoji: string }[] = [
   { value: 'commute', label: '通勤', emoji: '💼' },
@@ -73,11 +75,22 @@ export function Daily() {
     resetAll,
     selfPortrait,
     setSelfPortrait,
+    customStyles,
+    addCustomStyle,
+    removeCustomStyle,
   } = useApp();
   const [accountOpen, setAccountOpen] = useState(false);
   const [tryOnLook, setTryOnLook] = useState<Look | null>(null);
   const [tryOnOpen, setTryOnOpen] = useState(false);
+  const [selectedStylePack, setSelectedStylePack] = useState<StylePack | null>(null);
+  const [showStyleImport, setShowStyleImport] = useState(false);
   const { toast } = useToast();
+
+  // 所有可选风格 = 内置 + 用户自定义
+  const allStyles = useMemo<StylePack[]>(
+    () => [...BUILTIN_STYLES, ...customStyles],
+    [customStyles],
+  );
 
   // 本人照片上传处理
   const handleSelfUpload = (file: File) => {
@@ -135,14 +148,15 @@ export function Daily() {
       stylePrefs,
       weather: { temp: avgTemp, condition: today.condition },
       count: 3,
+      stylePack: selectedStylePack,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wardrobe, occasion, dressCode, stylePrefs, seed, today.condition, today.tempHigh, today.tempLow]);
+  }, [wardrobe, occasion, dressCode, stylePrefs, seed, today.condition, today.tempHigh, today.tempLow, selectedStylePack]);
 
-  // —— 条件变化（场景/Dress Code/风格/seed）后重置到第一套 ——
+  // —— 条件变化（场景/Dress Code/风格/seed/风格包）后重置到第一套 ——
   useEffect(() => {
     setActiveIdx(0);
-  }, [occasion, dressCode, stylePrefs, seed]);
+  }, [occasion, dressCode, stylePrefs, seed, selectedStylePack]);
 
   // —— 用 LLM 风格 mock 改写 reason ——
   useEffect(() => {
@@ -150,10 +164,11 @@ export function Daily() {
     Promise.all(
       looks.map(async (l) => {
         const avgTemp = (today.tempHigh + today.tempLow) / 2;
-        const comment = await generateStylistComment(l, {
-          temp: avgTemp,
-          condition: today.condition,
-        });
+        const comment = await generateStylistComment(
+          l,
+          { temp: avgTemp, condition: today.condition },
+          selectedStylePack,
+        );
         return { ...l, reason: comment };
       }),
     ).then((arr) => {
@@ -163,7 +178,7 @@ export function Daily() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [looks]);
+  }, [looks, selectedStylePack]);
 
   const toggleStyle = (s: Style) => {
     setStylePrefs((prev) => (prev.includes(s) ? prev.filter((p) => p !== s) : [...prev, s]));
@@ -309,6 +324,93 @@ export function Daily() {
       <div className="px-5 pt-4 space-y-5">
         <WeatherCard weather={today} loading={loadingWeather} onCityChange={handleCityChange} />
 
+        {/* 今日风格横滚条 */}
+        <section>
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              今日风格
+            </h2>
+            {selectedStylePack && (
+              <button
+                data-testid="button-style-clear"
+                onClick={() => setSelectedStylePack(null)}
+                className="text-[11px] text-muted-foreground hover-elevate px-2 py-0.5 rounded-full"
+              >
+                清除
+              </button>
+            )}
+          </div>
+          <div className="flex gap-2 overflow-x-auto -mx-5 px-5 pb-2 scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
+            {allStyles.map((sp) => {
+              const active = selectedStylePack?.id === sp.id;
+              const isCustom = sp.source === 'custom';
+              return (
+                <button
+                  key={sp.id}
+                  data-testid={`style-card-${sp.id}`}
+                  onClick={() => setSelectedStylePack(active ? null : sp)}
+                  className={`shrink-0 w-24 h-28 rounded-2xl border overflow-hidden flex flex-col hover-elevate relative ${
+                    active
+                      ? 'border-primary ring-2 ring-primary/40'
+                      : 'border-card-border'
+                  }`}
+                  aria-label={sp.name}
+                >
+                  {/* 色块区 */}
+                  <div
+                    className="h-14 w-full flex"
+                    style={{
+                      background: `linear-gradient(135deg, ${sp.colors.join(', ')})`,
+                    }}
+                  >
+                    <div className="flex items-end justify-center w-full pb-1 text-base leading-none">
+                      <span className="drop-shadow">{sp.emojis.slice(0, 3).join('')}</span>
+                    </div>
+                  </div>
+                  {/* 名字区 */}
+                  <div className="flex-1 flex flex-col items-center justify-center px-1 py-1.5 bg-card">
+                    <div className="text-xs font-semibold tracking-tight text-foreground line-clamp-1">
+                      {sp.name}
+                    </div>
+                    {isCustom && (
+                      <div className="text-[9px] text-muted-foreground mt-0.5">自定义</div>
+                    )}
+                  </div>
+                  {isCustom && (
+                    <button
+                      data-testid={`button-style-remove-${sp.id}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (selectedStylePack?.id === sp.id) setSelectedStylePack(null);
+                        removeCustomStyle(sp.id);
+                        toast({ title: '已删除自定义风格' });
+                      }}
+                      className="absolute top-1 right-1 h-4 w-4 rounded-full bg-background/80 border border-card-border flex items-center justify-center"
+                    >
+                      <XIcon className="h-2.5 w-2.5" />
+                    </button>
+                  )}
+                </button>
+              );
+            })}
+            {/* “+ 自定义”按钮 */}
+            <button
+              data-testid="button-style-import"
+              onClick={() => setShowStyleImport(true)}
+              className="shrink-0 w-24 h-28 rounded-2xl border border-dashed border-card-border flex flex-col items-center justify-center gap-1 hover-elevate text-muted-foreground"
+            >
+              <Plus className="h-5 w-5" />
+              <div className="text-[11px] font-medium">截图导入</div>
+              <div className="text-[9px] text-muted-foreground/80">自定义风格</div>
+            </button>
+          </div>
+          {selectedStylePack && (
+            <div className="mt-1 text-[11px] text-muted-foreground px-1">
+              {selectedStylePack.description}
+            </div>
+          )}
+        </section>
+
         {/* 场景选择 */}
         <section>
           <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
@@ -416,6 +518,7 @@ export function Daily() {
               activeIdx={activeIdx}
               setActiveIdx={setActiveIdx}
               favoriteIds={favoriteLooks.map((f) => f.id)}
+              stylePackName={selectedStylePack?.name ?? null}
               onLike={(l) => {
                 const isLiked = favoriteLooks.some((f) => f.id === l.id);
                 if (isLiked) {
@@ -439,6 +542,18 @@ export function Daily() {
           )}
         </section>
       </div>
+
+      {/* 截图导入风格 —— Phase 2 */}
+      <StyleImportSheet
+        open={showStyleImport}
+        onOpenChange={setShowStyleImport}
+        onConfirm={(pack) => {
+          addCustomStyle(pack);
+          setSelectedStylePack(pack);
+          setShowStyleImport(false);
+          toast({ title: `已导入《${pack.name}》`, description: '已为你调整今日搭配' });
+        }}
+      />
 
       {/* 一键试穿浮窗 */}
       <TryOnDialog
@@ -479,6 +594,7 @@ function LookSwiper({
   activeIdx,
   setActiveIdx,
   favoriteIds,
+  stylePackName,
   onLike,
   onWear,
   onTryOn,
@@ -488,6 +604,7 @@ function LookSwiper({
   activeIdx: number;
   setActiveIdx: (n: number) => void;
   favoriteIds: string[];
+  stylePackName?: string | null;
   onLike: (l: Look) => void;
   onWear: (l: Look) => void;
   onTryOn: (l: Look) => void;
@@ -581,6 +698,7 @@ function LookSwiper({
                 look={l}
                 liked={favoriteIds.includes(l.id)}
                 hideDislike
+                stylePackName={stylePackName}
                 onLike={() => onLike(l)}
                 onWear={() => onWear(l)}
                 onTryOn={() => onTryOn(l)}
@@ -617,5 +735,205 @@ function LookSwiper({
         <RefreshCw className="h-3.5 w-3.5" /> 换一批搭配
       </button>
     </div>
+  );
+}
+
+// ============================================================
+// StyleImportSheet —— 上传截图，调用视觉模型生成自定义风格包
+// ============================================================
+function StyleImportSheet({
+  open,
+  onOpenChange,
+  onConfirm,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  onConfirm: (pack: StylePack) => void;
+}) {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [pack, setPack] = useState<StylePack | null>(null);
+  const [editName, setEditName] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [source, setSource] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const reset = () => {
+    setPreviewUrl(null);
+    setPack(null);
+    setEditName('');
+    setError(null);
+    setSource(null);
+    setLoading(false);
+  };
+
+  // 关闭弹窗时清状态
+  useEffect(() => {
+    if (!open) reset();
+  }, [open]);
+
+  const handleFile = async (file: File) => {
+    if (file.size > 6 * 1024 * 1024) {
+      setError('图片超过 6MB，请压缩后再试');
+      return;
+    }
+    setError(null);
+    setLoading(true);
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const dataUrl = reader.result as string;
+      setPreviewUrl(dataUrl);
+      try {
+        const result = await extractStyleFromScreenshot(dataUrl);
+        if (result.pack) {
+          setPack(result.pack);
+          setEditName(result.pack.name);
+        }
+        setSource(result.source);
+        if (result.fallbackReason) setError(result.fallbackReason);
+      } catch (e) {
+        setError((e as Error).message || '识别失败，请换张图试试');
+      } finally {
+        setLoading(false);
+      }
+    };
+    reader.onerror = () => {
+      setError('图片读取失败');
+      setLoading(false);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleConfirm = () => {
+    if (!pack) return;
+    const finalPack: StylePack = {
+      ...pack,
+      name: editName.trim() || pack.name,
+      screenshot: previewUrl ?? undefined,
+    };
+    onConfirm(finalPack);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-[380px]">
+        <DialogHeader>
+          <DialogTitle>截图导入风格</DialogTitle>
+          <DialogDescription>
+            上传一张小红书穿搭截图，AI 会提取风格关键词为你生成自定义风格包
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          {!previewUrl && (
+            <label
+              htmlFor="style-screenshot-input"
+              className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-card-border p-6 cursor-pointer hover-elevate"
+              data-testid="label-style-upload"
+            >
+              <Camera className="h-7 w-7 text-muted-foreground" />
+              <div className="text-sm font-medium">点击上传截图</div>
+              <div className="text-[11px] text-muted-foreground">支持 JPG / PNG，≤ 6MB</div>
+            </label>
+          )}
+          <input
+            ref={inputRef}
+            id="style-screenshot-input"
+            type="file"
+            accept="image/*"
+            className="hidden"
+            data-testid="input-style-screenshot"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) handleFile(f);
+              e.target.value = '';
+            }}
+          />
+
+          {previewUrl && (
+            <div className="relative rounded-xl overflow-hidden border border-card-border">
+              <img src={previewUrl} alt="预览" className="w-full max-h-44 object-cover" />
+              <button
+                onClick={reset}
+                className="absolute top-2 right-2 h-7 w-7 rounded-full bg-background/85 border border-card-border flex items-center justify-center"
+                data-testid="button-style-reset"
+              >
+                <XIcon className="h-3.5 w-3.5" />
+              </button>
+              {loading && (
+                <div className="absolute inset-0 bg-background/70 flex flex-col items-center justify-center gap-1.5">
+                  <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                  <div className="text-xs text-muted-foreground">AI 识别中…</div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {error && (
+            <div className="rounded-lg bg-destructive/10 border border-destructive/30 px-3 py-2 text-[11px] text-destructive">
+              {error}
+            </div>
+          )}
+
+          {pack && (
+            <div className="rounded-2xl border border-card-border p-3 space-y-2.5">
+              {/* 预览卡 */}
+              <div
+                className="h-16 rounded-xl flex items-end justify-center pb-1"
+                style={{ background: `linear-gradient(135deg, ${pack.colors.join(', ')})` }}
+              >
+                <span className="text-base drop-shadow">{pack.emojis.slice(0, 4).join('')}</span>
+              </div>
+              {/* 可编辑名字 */}
+              <div className="space-y-1">
+                <label className="text-[11px] text-muted-foreground">风格名</label>
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full h-9 px-2.5 rounded-lg border border-card-border bg-background text-sm"
+                  data-testid="input-style-name"
+                  maxLength={12}
+                />
+              </div>
+              <div className="text-[11px] text-muted-foreground">{pack.description}</div>
+              <div className="flex flex-wrap gap-1">
+                {pack.keywords.slice(0, 6).map((k) => (
+                  <span
+                    key={k}
+                    className="px-2 py-0.5 rounded-full text-[10px] bg-secondary text-secondary-foreground"
+                  >
+                    {k}
+                  </span>
+                ))}
+              </div>
+              {source === 'fallback' && (
+                <div className="text-[10px] text-muted-foreground">
+                  · 当前为本地兜底识别（未连接视觉模型，关键词较粗略）
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={() => onOpenChange(false)}
+              className="flex-1 py-2 rounded-xl border border-card-border text-sm hover-elevate"
+              data-testid="button-close-style-import"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleConfirm}
+              disabled={!pack || loading}
+              className="flex-1 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover-elevate disabled:opacity-40 disabled:pointer-events-none"
+              data-testid="button-style-confirm"
+            >
+              确认使用
+            </button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

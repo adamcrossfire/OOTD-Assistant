@@ -23,6 +23,7 @@ import type {
   Weather,
   Season,
 } from '../types';
+import type { StylePack } from '../../../shared/styles-library';
 
 // ---------- 工具 ----------
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -106,10 +107,46 @@ export interface RecommendInput {
   lockedItem?: Item;
   /** 生成几套 */
   count?: number;
+  /** 可选：今日风格包（小红书风格库 / 自定义），命中关键词加分 */
+  stylePack?: StylePack | null;
+}
+
+/** 计算单品与风格包的匹配分（0-30） */
+function stylePackScore(items: Item[], pack: StylePack | null | undefined): number {
+  if (!pack) return 0;
+  let score = 0;
+  // 色彩家族匹配（0-12）
+  if (pack.paletteHint && pack.paletteHint.length > 0) {
+    const matched = items.filter((i) => pack.paletteHint!.includes(i.colorFamily as any)).length;
+    score += Math.min(12, matched * 4);
+  }
+  // 子品类名包含关键词（0-12）
+  if (pack.keywords && pack.keywords.length > 0) {
+    let kwHits = 0;
+    for (const it of items) {
+      const text = `${it.subCategory} ${it.styles.join(' ')}`.toLowerCase();
+      for (const kw of pack.keywords) {
+        if (text.includes(kw.toLowerCase())) {
+          kwHits++;
+          break;
+        }
+      }
+    }
+    score += Math.min(12, kwHits * 4);
+  }
+  // 季节匹配（0-6）
+  if (pack.seasons && pack.seasons.length > 0 && !pack.seasons.includes('all')) {
+    const seasonOkCount = items.filter((i) => i.season === 'all' || pack.seasons.includes(i.season as any)).length;
+    if (seasonOkCount === items.length) score += 6;
+    else score += Math.round((seasonOkCount / Math.max(1, items.length)) * 4);
+  } else {
+    score += 3; // 季节中性
+  }
+  return score;
 }
 
 export function recommendLooks(input: RecommendInput): Look[] {
-  const { wardrobe, occasion, dressCode, stylePrefs, weather, lockedItem, count = 3 } = input;
+  const { wardrobe, occasion, dressCode, stylePrefs, weather, lockedItem, count = 3, stylePack } = input;
   const season = getSeasonByTemp(weather.temp);
 
   // 1) 过滤：Dress Code 必须满足 + 季节兼容
@@ -170,8 +207,9 @@ export function recommendLooks(input: RecommendInput): Look[] {
     const cs = colorScore(items);
     const ss = styleScore(items, stylePrefs);
     const ws = weatherScore(items, weather.temp, weather.condition);
-    const score = Math.min(100, cs + ss + ws);
-    return { items, cs, ss, ws, score };
+    const ps = stylePackScore(items, stylePack);
+    const score = Math.min(100, cs + ss + ws + ps);
+    return { items, cs, ss, ws, ps, score };
   });
 
   // 3) 去重 & 排序：避免推完全一样的上下装组合

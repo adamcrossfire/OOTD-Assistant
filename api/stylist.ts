@@ -37,6 +37,11 @@ interface StylistRequest {
     temp: number;
     condition?: string;
   };
+  stylePack?: {
+    name: string;
+    description?: string;
+    keywords?: string[];
+  } | null;
 }
 
 const DASHSCOPE_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
@@ -56,11 +61,15 @@ function buildUserPrompt(req: StylistRequest): string {
   const stylesDesc = req.look.styles.join('、') || '无特定风格';
   const tempDesc = `${req.weather.temp}°C`;
   const condDesc = req.weather.condition ? `，天气${req.weather.condition}` : '';
+  const sp = req.stylePack;
+  const styleHint = sp
+    ? `\n用户指定今日风格为《${sp.name}》：${sp.description ?? ''}。关键词：${(sp.keywords ?? []).join('/')}。评论要明确体现这个风格的氛围感。`
+    : '';
 
   return `今天搭配：${itemsDesc}。
 风格标签：${stylesDesc}。
 场合：${req.look.occasion}。
-天气：${tempDesc}${condDesc}。
+天气：${tempDesc}${condDesc}。${styleHint}
 
 请用一位小红书博主的口吻给出 60-90 字的造型点评。`;
 }
