@@ -37,6 +37,8 @@ export function Travel() {
   const [destCoords, setDestCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [citySuggestions, setCitySuggestions] = useState<CityResult[]>([]);
   const [days, setDays] = useState(5);
+  // 独立的字符串 state 让输入框可以临时为空（便于全删后重新输入）
+  const [daysInputStr, setDaysInputStr] = useState('5');
   const [purpose, setPurpose] = useState<'business' | 'leisure' | 'mixed'>('mixed');
   const [luggage, setLuggage] = useState<'cabin' | 'check-in'>('cabin');
   const [stylePrefs, setStylePrefs] = useState<Style[]>(['minimal']);
@@ -63,6 +65,7 @@ export function Travel() {
       setDestination(trip.destination);
       setDestCoords(trip.destCoords ?? null);
       setDays(trip.days);
+      setDaysInputStr(String(trip.days));
       setPurpose(trip.purpose);
       setLuggage(trip.luggage);
       setStylePrefs(trip.stylePrefs);
@@ -260,10 +263,28 @@ export function Travel() {
             <input
               data-testid="input-days"
               type="number"
+              inputMode="numeric"
               min={1}
               max={30}
-              value={days}
-              onChange={(e) => setDays(Math.max(1, Math.min(30, +e.target.value || 1)))}
+              value={daysInputStr}
+              onFocus={(e) => e.target.select()}
+              onChange={(e) => {
+                const raw = e.target.value;
+                // 允许空值中间态，让用户可以删净后重新输入
+                if (raw === '') {
+                  setDaysInputStr('');
+                  return;
+                }
+                const n = parseInt(raw, 10);
+                if (Number.isNaN(n)) return;
+                const clamped = Math.max(1, Math.min(30, n));
+                setDaysInputStr(String(clamped));
+                setDays(clamped);
+              }}
+              onBlur={() => {
+                // 失焦时若为空，回填当前 days
+                if (daysInputStr === '') setDaysInputStr(String(days));
+              }}
               placeholder="1-30"
               className="mt-1.5 w-full px-3 py-2.5 rounded-xl bg-card border border-card-border text-sm focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none"
             />
