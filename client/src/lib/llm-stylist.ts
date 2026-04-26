@@ -1,11 +1,10 @@
 // ============================================================
-// LLM 智能搭配理由 —— 阶段2 Mock 版
+// LLM 智能搭配理由
 //
-// 当前实现：基于 Look 的属性，用规则化模板生成更像「真人造型师」的解读
-// 比规则引擎的「色彩协调・风格契合度高」更生动具体
+// 阶段 3：优先调用 /api/stylist（真实 LLM，通义千问 Qwen-Plus / OpenAI 兼容）
+//        若服务端未配 DASHSCOPE_API_KEY/OPENAI_API_KEY 或调用失败 → 回退本地模板
 //
-// 升级路径：替换 generateStylistComment 内部为 OpenAI/Claude/Gemini 调用
-// 输入输出契约保持不变，UI 无需改动
+// 输入输出契约保持不变，UI 层无感知
 // ============================================================
 
 import type { Look, Weather, Occasion } from '../types';
@@ -46,44 +45,89 @@ function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-/**
- * 主入口：为一个 Look 生成造型师风评论
- * 返回 1-2 句话，60-90 字，更像小红书穿搭博主的口吻
- */
-export async function generateStylistComment(
+/** 远程 LLM API 调用 */
+async function callRemoteStylist(
   look: Look,
   weather: { temp: number; condition?: Weather['condition'] },
-): Promise<string> {
-  // 模拟 LLM 延迟
-  await new Promise((r) => setTimeout(r, 300));
+): Promise<string | null> {
+  try {
+    const r = await fetch('/api/stylist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        look: {
+          items: look.items.map((i) => ({
+            category: i.category,
+            subCategory: i.subCategory,
+            color: i.color,
+            colorFamily: i.colorFamily,
+          })),
+          styles: look.styles,
+          occasion: OCCASION_LABEL[look.occasion] ?? '日常',
+        },
+        weather: {
+          temp: weather.temp,
+          condition: weather.condition,
+        },
+      }),
+    });
+    if (!r.ok) return null;
+    // 防御：本地 dev 服务器上 /api/* 不存在时会被 SPA fallback 返回 index.html
+    const ct = r.headers.get('content-type') ?? '';
+    if (!ct.includes('application/json')) return null;
+    const j = await r.json();
+    if (typeof j?.comment === 'string' && j.comment.length > 0) {
+      return j.comment;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
-  // 1. 主色调描述
+/** 本地模板兜底（原 Mock 逻辑） */
+function localStylistTemplate(
+  look: Look,
+  weather: { temp: number; condition?: Weather['condition'] },
+): string {
   const families = look.items.map((i) => i.colorFamily);
   const dominantFamily = mostCommon(families);
   const colorTone = COLOR_PHRASES[dominantFamily] ?? '层次和谐';
 
-  // 2. 风格描述
   const stylePhrase = look.styles[0]
     ? pick(STYLE_PHRASES[look.styles[0]] ?? ['整体协调'])
     : '整体协调';
 
-  // 3. 关键单品
   const hero = look.items.find((i) => i.category === 'outer')
     ?? look.items.find((i) => i.category === 'dress')
     ?? look.items.find((i) => i.category === 'top');
   const heroName = hero?.subCategory ?? '基础款';
 
-  // 4. 场景 + 温度提示
   const occLabel = OCCASION_LABEL[look.occasion] ?? '日常';
   const tempTip = buildTempTip(weather.temp, weather.condition);
 
-  // 5. 组合输出（随机模板）
   const templates = [
     `${stylePhrase}，${colorTone}让${heroName}成为整套点睛。${occLabel}穿足够稳，${tempTip}。`,
     `用${heroName}打底，${colorTone}叠搭出${stylePhrase}。${occLabel}气场到位，${tempTip}。`,
     `${colorTone}配上${stylePhrase}，${heroName}是整套的高光。${tempTip}，${occLabel}很合适。`,
   ];
   return pick(templates);
+}
+
+/**
+ * 主入口：为一个 Look 生成造型师风评论
+ * 先尝试真 LLM，失败则用本地模板兜底
+ */
+export async function generateStylistComment(
+  look: Look,
+  weather: { temp: number; condition?: Weather['condition'] },
+): Promise<string> {
+  const remote = await callRemoteStylist(look, weather);
+  if (remote) return remote;
+
+  // 本地兜底：模拟原有 300ms 延迟，保持 UI 节奏一致
+  await new Promise((r) => setTimeout(r, 300));
+  return localStylistTemplate(look, weather);
 }
 
 function mostCommon<T>(arr: T[]): T {
@@ -110,5 +154,5 @@ function buildTempTip(temp: number, cond?: Weather['condition']): string {
   return '严寒注意叠穿';
 }
 
-/** 是否启用真实 LLM（将来接入后改 true） */
-export const LLM_API_ENABLED = false;
+/** 是否启用真实 LLM（通过环境变量自动判定，前端无需关心） */
+export const LLM_API_ENABLED = true;

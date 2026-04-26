@@ -1,16 +1,10 @@
 // ============================================================
-// 图像识别接口 —— 阶段2 Mock 版
+// 衣物图像识别接口
 //
-// 输入：用户上传的衣物照片（base64 或 blob）
-// 输出：自动推断的 { category, subCategory, colorFamily, color, styles, season }
+// 阶段 4：优先调用 /api/vision（真实视觉 LLM，通义千问 Qwen-VL-Plus）
+//        若服务端未配 key 或失败 → 回退本地 Canvas 采色 + 规则推断
 //
-// 当前实现：
-//   - 在浏览器端用 Canvas 抽样取色 → 推断主色 + 颜色家族（真实可用）
-//   - 品类/风格用规则猜测 + 默认值（mock）
-//
-// 升级路径：
-//   - 替换 detectClothing() 内部为 Google Vision / AWS Rekognition / Replicate API
-//   - 输入接口和返回结构保持不变，业务层无感知
+// 输入输出契约保持不变，业务层无感知
 // ============================================================
 
 import type { Category, Item, Season, Style } from '../types';
@@ -22,11 +16,39 @@ export interface DetectionResult {
   colorFamily: Item['colorFamily'];
   styles: Style[];
   season: Season;
-  /** 置信度（mock = 0.7-0.9） */
+  /** 置信度（远程 = 模型给出，本地 = 0.7-0.9） */
   confidence: number;
 }
 
-/** 计算图像主色 —— 真实实现，用 Canvas 像素采样 */
+/** 远程视觉 API */
+async function callRemoteVision(dataUrl: string): Promise<DetectionResult | null> {
+  try {
+    const r = await fetch('/api/vision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: dataUrl }),
+    });
+    if (!r.ok) return null;
+    const ct = r.headers.get('content-type') ?? '';
+    if (!ct.includes('application/json')) return null;
+    const j = await r.json();
+    if (!j || !j.category) return null;
+    // 服务端已做合法性归一化，这里再次 narrow type
+    return {
+      category: j.category as Category,
+      subCategory: String(j.subCategory ?? '单品'),
+      color: String(j.color ?? '#888888'),
+      colorFamily: j.colorFamily as Item['colorFamily'],
+      styles: (j.styles ?? []) as Style[],
+      season: (j.season ?? 'all') as Season,
+      confidence: typeof j.confidence === 'number' ? j.confidence : 0.85,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** 计算图像主色 —— 浏览器端 Canvas 像素采样 */
 async function extractDominantColor(dataUrl: string): Promise<string> {
   return new Promise((resolve) => {
     const img = new Image();
@@ -43,7 +65,6 @@ async function extractDominantColor(dataUrl: string): Promise<string> {
       try {
         const { data } = ctx.getImageData(0, 0, size, size);
         for (let i = 0; i < data.length; i += 16) {
-          // 跳过近白色背景（避免抠图风受白底影响）
           const cr = data[i], cg = data[i + 1], cb = data[i + 2];
           if (cr > 240 && cg > 240 && cb > 240) continue;
           r += cr;
@@ -83,26 +104,19 @@ function hexToFamily(hex: string): Item['colorFamily'] {
   return 'neutral';
 }
 
-/** 极简版品类分类（基于图像比例 + 颜色） */
-function guessCategory(_img?: HTMLImageElement): Category {
-  // mock：返回最常见的 top
+function guessCategory(): Category {
   const pool: Category[] = ['top', 'bottom', 'outer', 'shoes'];
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
-/**
- * 主入口：上传图片 → 识别属性
- * @param dataUrl base64 图片
- */
-export async function detectClothing(dataUrl: string): Promise<DetectionResult> {
-  // 模拟接口耗时（让 UI loading 状态有意义）
+/** 本地兜底识别 */
+async function localDetect(dataUrl: string): Promise<DetectionResult> {
   await new Promise((r) => setTimeout(r, 600));
 
   const color = await extractDominantColor(dataUrl);
   const colorFamily = hexToFamily(color);
   const category = guessCategory();
 
-  // 默认风格猜测（mock）
   const styleMap: Record<Item['colorFamily'], Style[]> = {
     black: ['minimal', 'cool'],
     white: ['minimal', 'japanese'],
@@ -131,5 +145,16 @@ export async function detectClothing(dataUrl: string): Promise<DetectionResult> 
   };
 }
 
-/** 是否启用真实识别（将来接 Vision API 后改 true） */
-export const VISION_API_ENABLED = false;
+/**
+ * 主入口：上传图片 → 识别属性
+ * 优先走真实视觉 API，失败则本地兜底
+ * @param dataUrl base64 图片
+ */
+export async function detectClothing(dataUrl: string): Promise<DetectionResult> {
+  const remote = await callRemoteVision(dataUrl);
+  if (remote) return remote;
+  return localDetect(dataUrl);
+}
+
+/** 是否启用真实视觉识别（通过环境变量自动判定，前端无需关心） */
+export const VISION_API_ENABLED = true;
