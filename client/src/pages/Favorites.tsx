@@ -25,7 +25,13 @@ export function Favorites() {
           </div>
         ) : (
           favoriteLooks.map((l) => (
-            <LookCard key={l.id} look={l} onDislike={() => removeFavorite(l.id)} />
+            <LookCard
+              key={l.id}
+              look={l}
+              liked
+              hideDislike
+              onLike={() => removeFavorite(l.id)}
+            />
           ))
         )}
       </div>

@@ -8,7 +8,7 @@ import { Logo } from '../components/Logo';
 import { recommendLooks } from '../lib/style-engine';
 import { getWeatherByCity } from '../lib/weather-api';
 import type { Occasion, DressCode, Style, Look, Weather } from '../types';
-import { Sparkles, RefreshCw, Settings2, User } from 'lucide-react';
+import { Sparkles, RefreshCw, Settings2, User, ChevronLeft, ChevronRight } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -57,7 +57,7 @@ const OCCASION_TO_DC: Record<Occasion, DressCode> = {
 };
 
 export function Daily() {
-  const { wardrobe, saveFavorite, pushHistory, city, setCity, weather, setWeather, gender, favoriteLooks, history, resetAll } = useApp();
+  const { wardrobe, saveFavorite, removeFavorite, pushHistory, city, setCity, weather, setWeather, gender, favoriteLooks, history, resetAll } = useApp();
   const [accountOpen, setAccountOpen] = useState(false);
   const { toast } = useToast();
 
@@ -67,6 +67,7 @@ export function Daily() {
   const [stylePrefs, setStylePrefs] = useState<Style[]>(['minimal']);
   const [seed, setSeed] = useState(0); // 重新生成
   const [looksWithComment, setLooksWithComment] = useState<Look[]>([]);
+  const [activeIdx, setActiveIdx] = useState(0); // 当前展示的 Look 下标
 
   // —— 首次进入：拉真实天气 ——
   useEffect(() => {
@@ -105,6 +106,11 @@ export function Daily() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wardrobe, occasion, dressCode, stylePrefs, seed, today.condition, today.tempHigh, today.tempLow]);
+
+  // —— 条件变化（场景/Dress Code/风格/seed）后重置到第一套 ——
+  useEffect(() => {
+    setActiveIdx(0);
+  }, [occasion, dressCode, stylePrefs, seed]);
 
   // —— 用 LLM 风格 mock 改写 reason ——
   useEffect(() => {
@@ -306,8 +312,13 @@ export function Daily() {
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-base font-semibold tracking-tight flex items-center gap-1.5">
               <Sparkles className="h-4 w-4 text-primary" />
-              为你生成的 {looks.length} 套
+              {looks.length > 1
+                ? `为你生成的 ${looks.length} 套 · 第 ${Math.min(activeIdx + 1, looks.length)} 套`
+                : `为你生成的搭配`}
             </h2>
+            {looks.length > 1 && (
+              <span className="text-xs text-muted-foreground">左右滑动切换</span>
+            )}
           </div>
           {looks.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-card-border p-8 text-center">
@@ -316,26 +327,173 @@ export function Daily() {
               </p>
             </div>
           ) : (
-            <div className="space-y-4">
-              {(looksWithComment.length === looks.length ? looksWithComment : looks).map((l) => (
-                <LookCard
-                  key={l.id}
-                  look={l}
-                  onDislike={() => setSeed((n) => n + 1)}
-                  onLike={() => {
-                    saveFavorite(l);
-                    toast({ title: '已收藏', description: '可以在「收藏」里查看' });
-                  }}
-                  onWear={() => {
-                    pushHistory(l);
-                    toast({ title: '今日就穿它', description: '已加入穿搭日历' });
-                  }}
-                />
-              ))}
-            </div>
+            <LookSwiper
+              looks={looksWithComment.length === looks.length ? looksWithComment : looks}
+              activeIdx={activeIdx}
+              setActiveIdx={setActiveIdx}
+              favoriteIds={favoriteLooks.map((f) => f.id)}
+              onLike={(l) => {
+                const isLiked = favoriteLooks.some((f) => f.id === l.id);
+                if (isLiked) {
+                  removeFavorite(l.id);
+                  toast({ title: '已取消收藏' });
+                } else {
+                  saveFavorite(l);
+                  toast({ title: '已收藏', description: '可以在「收藏」里查看' });
+                }
+              }}
+              onWear={(l) => {
+                pushHistory(l);
+                toast({ title: '今日就穿它', description: '已加入穿搭日历' });
+              }}
+              onRefresh={() => setSeed((n) => n + 1)}
+            />
           )}
         </section>
       </div>
+    </div>
+  );
+}
+
+// ============================================================
+// LookSwiper —— 单卡左右滑动切换器
+// • 手机：手势滑动（touch）+ 鼠标拖拽（pointer）
+// • 桌面：可点左右箭头切换 + 键盘 ← / →
+// • 底部分页点可跳转指定套
+// ============================================================
+function LookSwiper({
+  looks,
+  activeIdx,
+  setActiveIdx,
+  favoriteIds,
+  onLike,
+  onWear,
+  onRefresh,
+}: {
+  looks: Look[];
+  activeIdx: number;
+  setActiveIdx: (n: number) => void;
+  favoriteIds: string[];
+  onLike: (l: Look) => void;
+  onWear: (l: Look) => void;
+  onRefresh: () => void;
+}) {
+  const safeIdx = Math.min(activeIdx, looks.length - 1);
+  const total = looks.length;
+
+  // 手势状态
+  const [dragX, setDragX] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const startX = useMemo(() => ({ current: 0 }), []);
+
+  const goPrev = () => setActiveIdx(Math.max(0, safeIdx - 1));
+  const goNext = () => setActiveIdx(Math.min(total - 1, safeIdx + 1));
+
+  // 键盘左右切换
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') goPrev();
+      if (e.key === 'ArrowRight') goNext();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [safeIdx, total]);
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    setDragging(true);
+    startX.current = e.clientX;
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!dragging) return;
+    setDragX(e.clientX - startX.current);
+  };
+  const handlePointerUp = () => {
+    if (!dragging) return;
+    setDragging(false);
+    const threshold = 60;
+    if (dragX > threshold) goPrev();
+    else if (dragX < -threshold) goNext();
+    setDragX(0);
+  };
+
+  return (
+    <div className="select-none">
+      {/* 滑动区域 */}
+      <div
+        className="relative overflow-hidden"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+      >
+        <div
+          className="flex"
+          style={{
+            transform: `translateX(calc(${-safeIdx * 100}% + ${dragX}px))`,
+            transition: dragging ? 'none' : 'transform 280ms cubic-bezier(0.22, 1, 0.36, 1)',
+          }}
+        >
+          {looks.map((l) => (
+            <div key={l.id} className="w-full shrink-0 px-0.5">
+              <LookCard
+                look={l}
+                liked={favoriteIds.includes(l.id)}
+                hideDislike
+                onLike={() => onLike(l)}
+                onWear={() => onWear(l)}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 底部分页点 + 换一批 */}
+      <div className="mt-3 flex items-center justify-between">
+        <button
+          data-testid="button-swiper-prev"
+          onClick={goPrev}
+          disabled={safeIdx === 0}
+          className="p-2 rounded-full hover-elevate disabled:opacity-30 disabled:pointer-events-none"
+          aria-label="上一套"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+
+        <div className="flex items-center gap-1.5">
+          {looks.map((_, i) => (
+            <button
+              key={i}
+              data-testid={`button-swiper-dot-${i}`}
+              onClick={() => setActiveIdx(i)}
+              className={`h-1.5 rounded-full transition-all ${
+                i === safeIdx ? 'w-5 bg-primary' : 'w-1.5 bg-muted-foreground/30'
+              }`}
+              aria-label={`第 ${i + 1} 套`}
+            />
+          ))}
+        </div>
+
+        <button
+          data-testid="button-swiper-next"
+          onClick={goNext}
+          disabled={safeIdx === total - 1}
+          className="p-2 rounded-full hover-elevate disabled:opacity-30 disabled:pointer-events-none"
+          aria-label="下一套"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* 换一批（全部重新生成） */}
+      <button
+        data-testid="button-regenerate-all"
+        onClick={onRefresh}
+        className="mt-3 w-full py-2.5 rounded-xl border border-card-border text-sm text-muted-foreground hover-elevate flex items-center justify-center gap-1.5"
+      >
+        <RefreshCw className="h-3.5 w-3.5" /> 换一批搭配
+      </button>
     </div>
   );
 }

@@ -52,7 +52,7 @@ export function GenderPicker() {
         </div>
 
         <p className="text-xs text-muted-foreground mt-8">
-          选择后会自动为你导入 mock 衣橱，方便立即体验
+          选择后会自动为你生成一份示例衣橱，方便立即体验
         </p>
       </div>
     </div>

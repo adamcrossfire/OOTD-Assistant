@@ -4,9 +4,13 @@ import { Heart, X, Check, AlertCircle } from 'lucide-react';
 
 interface Props {
   look: Look;
+  /** 当前 Look 是否已被收藏，用于点亮爱心图标 */
+  liked?: boolean;
   onLike?: () => void;
   onDislike?: () => void;
   onWear?: () => void;
+  /** 是否隐藏“换一批”按钮（滑动模式下不需要） */
+  hideDislike?: boolean;
 }
 
 const SCORE_LABEL = (s: number) => {
@@ -23,7 +27,7 @@ const SCORE_COLOR = (s: number) => {
   return 'hsl(24 8% 42%)';
 };
 
-export function LookCard({ look, onLike, onDislike, onWear }: Props) {
+export function LookCard({ look, liked = false, onLike, onDislike, onWear, hideDislike = false }: Props) {
   return (
     <article
       className="
@@ -106,25 +110,45 @@ export function LookCard({ look, onLike, onDislike, onWear }: Props) {
 
       {/* 操作按钮 */}
       {(onLike || onDislike || onWear) && (
-        <div className="grid grid-cols-3 border-t border-card-border">
-          <button
-            data-testid="button-look-dislike"
-            onClick={onDislike}
-            className="py-3 flex items-center justify-center gap-1.5 text-sm text-muted-foreground hover-elevate"
-          >
-            <X className="h-4 w-4" /> 换一批
-          </button>
+        <div
+          className={`grid border-t border-card-border ${
+            hideDislike ? 'grid-cols-2' : 'grid-cols-3'
+          }`}
+        >
+          {!hideDislike && (
+            <button
+              data-testid="button-look-dislike"
+              onClick={onDislike}
+              className="py-3 flex items-center justify-center gap-1.5 text-sm text-muted-foreground hover-elevate"
+            >
+              <X className="h-4 w-4" /> 换一批
+            </button>
+          )}
           <button
             data-testid="button-look-like"
             onClick={onLike}
-            className="py-3 flex items-center justify-center gap-1.5 text-sm text-muted-foreground hover-elevate border-l border-r border-card-border"
+            aria-pressed={liked}
+            className={`py-3 flex items-center justify-center gap-1.5 text-sm hover-elevate ${
+              hideDislike ? '' : 'border-l border-r border-card-border'
+            } ${
+              liked
+                ? 'text-[hsl(0_72%_55%)] font-semibold'
+                : 'text-muted-foreground'
+            }`}
           >
-            <Heart className="h-4 w-4" /> 收藏
+            <Heart
+              className="h-4 w-4"
+              fill={liked ? 'currentColor' : 'none'}
+              strokeWidth={liked ? 0 : 2}
+            />
+            {liked ? '已收藏' : '收藏'}
           </button>
           <button
             data-testid="button-look-wear"
             onClick={onWear}
-            className="py-3 flex items-center justify-center gap-1.5 text-sm font-semibold text-primary hover-elevate"
+            className={`py-3 flex items-center justify-center gap-1.5 text-sm font-semibold text-primary hover-elevate ${
+              hideDislike ? 'border-l border-card-border' : ''
+            }`}
           >
             <Check className="h-4 w-4" /> 就穿它
           </button>
