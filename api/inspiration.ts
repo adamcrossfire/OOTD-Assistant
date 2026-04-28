@@ -31,6 +31,7 @@ const DASHSCOPE_T2I_URL =
 const DASHSCOPE_TASK_URL = 'https://dashscope.aliyuncs.com/api/v1/tasks/';
 
 interface InspirationRequest {
+  stylePackId?: string | null;
   stylePack?: { name?: string; description?: string; keywords?: string[]; colors?: string[] } | null;
   styles?: string[];
   occasion: string;
@@ -163,8 +164,8 @@ function inferItems(req: InspirationRequest): Array<{
   ];
 }
 
-async function callWan22(prompt: string, seed: number, apiKey: string): Promise<string> {
-  // 1. 异步任务提交
+async function callWan(prompt: string, seed: number, apiKey: string): Promise<string> {
+  // 1. 异步任务提交 —— 改用 wanx2.1-t2i-flash（更快、质量接近，单张 2-5s）
   const submit = await fetch(DASHSCOPE_T2I_URL, {
     method: 'POST',
     headers: {
@@ -173,7 +174,7 @@ async function callWan22(prompt: string, seed: number, apiKey: string): Promise<
       'X-DashScope-Async': 'enable',
     },
     body: JSON.stringify({
-      model: 'wanx2.1-t2i-turbo',
+      model: 'wanx2.1-t2i-flash',
       input: { prompt },
       parameters: { size: '720*1280', n: 1, seed },
     }),
@@ -183,9 +184,9 @@ async function callWan22(prompt: string, seed: number, apiKey: string): Promise<
   const taskId = sj.output?.task_id;
   if (!taskId) throw new Error('no task_id');
 
-  // 2. 轮询（wan2.x turbo 一般 5-15s）
-  for (let i = 0; i < 30; i++) {
-    await new Promise((r) => setTimeout(r, 2000));
+  // 2. 轮询（flash 一般 2-5s，间隔压到 800ms）
+  for (let i = 0; i < 60; i++) {
+    await new Promise((r) => setTimeout(r, 800));
     const r = await fetch(`${DASHSCOPE_TASK_URL}${taskId}`, {
       headers: { Authorization: `Bearer ${apiKey}` },
     });
@@ -202,6 +203,48 @@ async function callWan22(prompt: string, seed: number, apiKey: string): Promise<
     }
   }
   throw new Error('task timeout');
+}
+
+// ============================================================
+// 预生成池：常见 stylePack + occasion + gender 组合已预生成 2 张静态图
+// 命中直接返回 URL，避免实时调 wan API
+// 预生成脚本：scripts/build-inspo-pool.ts
+// 文件路径：/inspo-pool/<gender>-<stylePackId>-<occasion>-<variant>.webp（静态文件）
+// ============================================================
+
+const POOL_BASE = '/inspo-pool';
+
+const OCCASION_KEY: Record<string, string> = {
+  '通勤': 'commute',
+  '约会': 'date',
+  '运动': 'sport',
+  '面试': 'interview',
+  '派对': 'party',
+  '日常': 'casual',
+  '出行': 'travel',
+};
+
+/** 预生成池覆盖的 stylePack id（同步保持与 build-inspo-pool.ts一致） */
+const POOL_STYLE_IDS = new Set([
+  'minimal', 'old-money', 'maillard', 'french', 'preppy',
+  'qing-leng', 'la-mei', 'pure-desire', 'jk', 'y2k',
+  'techwear', 'gorpcore', 'city-boy', 'amekaji', 'salaryman',
+]);
+/** 预生成池覆盖的场合 */
+const POOL_OCCASIONS = new Set(['commute', 'date', 'casual', 'party']);
+/** 预生成变体数（每个组合 N 张） */
+const POOL_VARIANTS = 2;
+
+/** 判断请求是否可命中预生成池，命中返回 URL、未命中返回 null */
+function tryHitPool(req: InspirationRequest, seed: number): string | null {
+  // 用户自定义 stylePack 不在池里
+  const styleId = req.stylePackId ?? undefined;
+  if (!styleId || !POOL_STYLE_IDS.has(styleId)) return null;
+  const ocKey = OCCASION_KEY[req.occasion] ?? 'casual';
+  if (!POOL_OCCASIONS.has(ocKey)) return null;
+  const gender = req.gender === 'male' ? 'male' : 'female';
+  const variant = Math.abs(seed) % POOL_VARIANTS;
+  return `${POOL_BASE}/${gender}-${styleId}-${ocKey}-${variant}.webp`;
 }
 
 export default async function handler(req: Request) {
@@ -231,15 +274,24 @@ export default async function handler(req: Request) {
     typeof body.variantSeed === 'number' ? body.variantSeed % 2147483647 : Math.floor(Math.random() * 2147483647);
   const items = inferItems(body);
 
-  try {
-    const imageUrl = await callWan22(prompt, seed, apiKey);
+  // 先查预生成池，命中直接返回（0 延迟）
+  const poolUrl = tryHitPool(body, seed);
+  if (poolUrl) {
     return new Response(
-      JSON.stringify({ image: imageUrl, items, prompt }),
+      JSON.stringify({ image: poolUrl, items, prompt: '[pool-hit]', source: 'pool' }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    );
+  }
+
+  try {
+    const imageUrl = await callWan(prompt, seed, apiKey);
+    return new Response(
+      JSON.stringify({ image: imageUrl, items, prompt, source: 'wan-flash' }),
       { status: 200, headers: { 'Content-Type': 'application/json' } },
     );
   } catch (err: any) {
     return new Response(
-      JSON.stringify({ error: 'wan2 failed', detail: String(err?.message ?? err) }),
+      JSON.stringify({ error: 'wan failed', detail: String(err?.message ?? err) }),
       { status: 502, headers: { 'Content-Type': 'application/json' } },
     );
   }

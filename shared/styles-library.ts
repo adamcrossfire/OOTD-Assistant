@@ -25,6 +25,8 @@ export interface StylePack {
   paletteHint?: ('warm' | 'cool' | 'neutral' | 'black' | 'white')[];
   /** 适合季节 */
   seasons: ('spring' | 'summer' | 'autumn' | 'winter' | 'all')[];
+  /** 适合性别（默认 unisex） */
+  gender?: 'female' | 'male' | 'unisex';
   /** 来源 */
   source: 'builtin' | 'custom';
   /** 自定义风格的截图（仅 custom） */
@@ -43,6 +45,7 @@ export const BUILTIN_STYLES: StylePack[] = [
     keywords: ['冷色调', '雾蓝', '高级灰', '极简剪裁', '冷淡'],
     paletteHint: ['cool', 'white', 'black'],
     seasons: ['autumn', 'winter', 'spring'],
+    gender: 'unisex',
     source: 'builtin',
   },
   {
@@ -54,6 +57,7 @@ export const BUILTIN_STYLES: StylePack[] = [
     keywords: ['西装外套', '卡其', '乐福鞋', '马球衫', '羊绒针织', '低调奢华'],
     paletteHint: ['neutral', 'warm'],
     seasons: ['all'],
+    gender: 'unisex',
     source: 'builtin',
   },
   {
@@ -65,6 +69,7 @@ export const BUILTIN_STYLES: StylePack[] = [
     keywords: ['撞色', '糖果色', '亮色', '玩味', '高饱和'],
     paletteHint: ['warm', 'cool'],
     seasons: ['spring', 'summer'],
+    gender: 'unisex',
     source: 'builtin',
   },
   {
@@ -76,6 +81,7 @@ export const BUILTIN_STYLES: StylePack[] = [
     keywords: ['焦糖色', '可可色', '咖啡色', '同色系叠穿', '大地色'],
     paletteHint: ['warm', 'neutral'],
     seasons: ['autumn', 'winter'],
+    gender: 'unisex',
     source: 'builtin',
   },
   {
@@ -87,6 +93,7 @@ export const BUILTIN_STYLES: StylePack[] = [
     keywords: ['吊带', '蕾丝', '紧身', '低胸', '甜辣'],
     paletteHint: ['warm', 'white'],
     seasons: ['summer', 'spring'],
+    gender: 'female',
     source: 'builtin',
   },
   {
@@ -98,6 +105,7 @@ export const BUILTIN_STYLES: StylePack[] = [
     keywords: ['小香风', '蝴蝶结', '珍珠', '泡泡袖', '名媛', '英伦'],
     paletteHint: ['warm', 'neutral'],
     seasons: ['spring', 'autumn'],
+    gender: 'female',
     source: 'builtin',
   },
   {
@@ -109,6 +117,7 @@ export const BUILTIN_STYLES: StylePack[] = [
     keywords: ['露脐', '紧身', '低腰', '辣妹', '性感', '腰线'],
     paletteHint: ['warm', 'black'],
     seasons: ['summer'],
+    gender: 'female',
     source: 'builtin',
   },
   {
@@ -120,6 +129,7 @@ export const BUILTIN_STYLES: StylePack[] = [
     keywords: ['JK 制服', '百褶裙', '水手服', '领结', '校园风'],
     paletteHint: ['cool', 'white'],
     seasons: ['spring', 'autumn'],
+    gender: 'female',
     source: 'builtin',
   },
   {
@@ -131,6 +141,7 @@ export const BUILTIN_STYLES: StylePack[] = [
     keywords: ['立领', '盘扣', '马面裙', '宋制', '东方', '茶系'],
     paletteHint: ['warm', 'neutral'],
     seasons: ['all'],
+    gender: 'unisex',
     source: 'builtin',
   },
   {
@@ -142,6 +153,7 @@ export const BUILTIN_STYLES: StylePack[] = [
     keywords: ['低腰', '亮片', '蝴蝶', '荧光', '撞色', '复古辣'],
     paletteHint: ['cool', 'warm'],
     seasons: ['spring', 'summer'],
+    gender: 'female',
     source: 'builtin',
   },
   {
@@ -153,6 +165,7 @@ export const BUILTIN_STYLES: StylePack[] = [
     keywords: ['针织背心', '格纹', '马甲', '皮鞋', '学院', '书院'],
     paletteHint: ['warm', 'neutral'],
     seasons: ['autumn', 'winter', 'spring'],
+    gender: 'unisex',
     source: 'builtin',
   },
   {
@@ -164,6 +177,7 @@ export const BUILTIN_STYLES: StylePack[] = [
     keywords: ['撞色', '夸张配饰', '彩色头饰', '潮牌', 'oversized', '日系街头'],
     paletteHint: ['warm', 'cool'],
     seasons: ['spring', 'summer', 'autumn'],
+    gender: 'unisex',
     source: 'builtin',
   },
   {
@@ -175,6 +189,7 @@ export const BUILTIN_STYLES: StylePack[] = [
     keywords: ['条纹衫', '芭蕾鞋', '直筒裤', '小方巾', '法式', '随性'],
     paletteHint: ['neutral', 'cool', 'white'],
     seasons: ['spring', 'autumn'],
+    gender: 'female',
     source: 'builtin',
   },
   {
@@ -186,6 +201,7 @@ export const BUILTIN_STYLES: StylePack[] = [
     keywords: ['工装', '机能', '冲锋衣', '工装裤', '战术', '街头'],
     paletteHint: ['black', 'neutral'],
     seasons: ['all'],
+    gender: 'unisex',
     source: 'builtin',
   },
   {
@@ -197,6 +213,7 @@ export const BUILTIN_STYLES: StylePack[] = [
     keywords: ['冲锋衣', '抓绒', '登山靴', '户外', 'Patagonia', '山系'],
     paletteHint: ['neutral', 'warm'],
     seasons: ['autumn', 'winter', 'spring'],
+    gender: 'unisex',
     source: 'builtin',
   },
   {
@@ -208,9 +225,60 @@ export const BUILTIN_STYLES: StylePack[] = [
     keywords: ['黑白灰', '无 logo', '直线条', '极简', '冷淡', '高级'],
     paletteHint: ['black', 'white', 'neutral'],
     seasons: ['all'],
+    gender: 'unisex',
+    source: 'builtin',
+  },
+  // ========== 男装倾向风格 ==========
+  {
+    id: 'city-boy',
+    name: 'City Boy',
+    description: '日系都市男孩，干净通勤潮人',
+    colors: ['#f0e8d8', '#3a4a5a', '#7d6e57', '#1a1a1a'],
+    emojis: ['👔', '👖', '👞', '🎒'],
+    keywords: ['日系都市', '通勤潮', '简约层次', '直筒裤', '乐福鞋'],
+    paletteHint: ['neutral', 'cool'],
+    seasons: ['all'],
+    gender: 'male',
+    source: 'builtin',
+  },
+  {
+    id: 'amekaji',
+    name: '美式复古',
+    description: 'Ametora，丹宁、皮夹克、工装靴',
+    colors: ['#2c3a4a', '#8b5a3c', '#c4a574', '#1a1a1a'],
+    emojis: ['🧥', '👖', '🥾', '🧢'],
+    keywords: ['丹宁', '皮夹克', '工装靴', 'Ametora', '复古美式', 'Levis'],
+    paletteHint: ['warm', 'neutral', 'black'],
+    seasons: ['autumn', 'winter', 'spring'],
+    gender: 'male',
+    source: 'builtin',
+  },
+  {
+    id: 'salaryman',
+    name: '日系商务',
+    description: '干净西装通勤，温柔日系绅士',
+    colors: ['#e8eef2', '#3a5060', '#1a1a1a', '#7d6e57'],
+    emojis: ['👔', '👖', '👞', '👜'],
+    keywords: ['西装', '衬衫', '通勤', '日系商务', '极简正装'],
+    paletteHint: ['cool', 'neutral'],
+    seasons: ['all'],
+    gender: 'male',
     source: 'builtin',
   },
 ];
+
+/** 按性别过滤风格列表（性别为 null 时不过滤） */
+export function filterStylesByGender(
+  styles: StylePack[],
+  gender: 'female' | 'male' | null | undefined,
+): StylePack[] {
+  if (!gender) return styles;
+  return styles.filter((s) => {
+    const g = s.gender ?? 'unisex';
+    if (g === 'unisex') return true;
+    return g === gender;
+  });
+}
 
 /** 通过 id 查询风格 */
 export function getStyleById(id: string, customStyles: StylePack[] = []): StylePack | undefined {
