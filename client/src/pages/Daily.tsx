@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { generateStylistComment } from '../lib/llm-stylist';
-import { BUILTIN_STYLES, type StylePack } from '../../../shared/styles-library';
+import { BUILTIN_STYLES, filterStylesByGender, type StylePack } from '../../../shared/styles-library';
 import { extractStyleFromScreenshot } from '../lib/style-vision';
 import { generateInspirationLooks } from '../lib/inspiration-api';
 
@@ -89,8 +89,8 @@ export function Daily() {
 
   // 所有可选风格 = 内置 + 用户自定义
   const allStyles = useMemo<StylePack[]>(
-    () => [...BUILTIN_STYLES, ...customStyles],
-    [customStyles],
+    () => filterStylesByGender([...BUILTIN_STYLES, ...customStyles], gender),
+    [customStyles, gender],
   );
 
   // 本人照片上传处理

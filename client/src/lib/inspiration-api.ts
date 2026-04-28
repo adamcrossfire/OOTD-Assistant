@@ -77,6 +77,7 @@ export async function generateInspirationLook(opts: {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        stylePackId: stylePack?.id ?? null,
         stylePack: stylePack
           ? {
               name: stylePack.name,
