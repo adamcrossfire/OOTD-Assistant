@@ -48,7 +48,7 @@ export function LookCard({
       "
       data-testid={`card-look-${look.id}`}
     >
-      {/* 顶部：单品平铺 */}
+      {/* 顶部：参考衣橱模式走整张大图，真实衣橱走单品平铺 */}
       <div className="bg-[hsl(36_25%_95%)] dark:bg-[hsl(24_8%_12%)] p-4 pb-2 relative">
         {/* 匹配度徽章 */}
         <div
@@ -61,6 +61,14 @@ export function LookCard({
           >
             {look.score}% · {SCORE_LABEL(look.score)}
           </div>
+          {look.source === 'inspiration' && (
+            <div
+              className="px-2.5 py-1 rounded-full text-[11px] font-medium tracking-tight bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/30"
+              data-testid={`badge-source-inspo-${look.id}`}
+            >
+              ✨ 灵感搭配
+            </div>
+          )}
           {stylePackName && (
             <div
               className="px-2.5 py-1 rounded-full text-[11px] font-medium tracking-tight bg-primary/10 text-primary border border-primary/30"
@@ -71,26 +79,41 @@ export function LookCard({
           )}
         </div>
 
-        {/* 顶部选手展示主要 3 件，剩下的在列表里详细列出 */}
-        <div className="grid grid-cols-3 gap-2">
-          {look.items.slice(0, 3).map((item) => (
-            <div
-              key={item.id}
-              className="aspect-square rounded-xl bg-white dark:bg-[hsl(24_8%_18%)] overflow-hidden flex items-center justify-center p-1"
-            >
-              <img
-                src={item.photoUrl}
-                alt={item.subCategory}
-                className="w-full h-full object-contain"
-              />
-            </div>
-          ))}
-          {look.items.length > 3 && (
-            <div className="col-span-3 -mt-1 text-center text-[11px] text-muted-foreground">
-              +{look.items.length - 3} 件配饰/外套
-            </div>
-          )}
-        </div>
+        {look.source === 'inspiration' && look.inspirationImage ? (
+          // 参考衣橱：一张整身搭配图
+          <div
+            className="aspect-[3/4] w-full rounded-2xl overflow-hidden bg-white dark:bg-[hsl(24_8%_18%)]"
+            data-testid={`inspo-image-${look.id}`}
+          >
+            <img
+              src={look.inspirationImage}
+              alt={`参考搭配 ${look.id}`}
+              className="w-full h-full object-cover"
+              loading="lazy"
+            />
+          </div>
+        ) : (
+          // 真实衣橱：单品平铺
+          <div className="grid grid-cols-3 gap-2">
+            {look.items.slice(0, 3).map((item) => (
+              <div
+                key={item.id}
+                className="aspect-square rounded-xl bg-white dark:bg-[hsl(24_8%_18%)] overflow-hidden flex items-center justify-center p-1"
+              >
+                <img
+                  src={item.photoUrl}
+                  alt={item.subCategory}
+                  className="w-full h-full object-contain"
+                />
+              </div>
+            ))}
+            {look.items.length > 3 && (
+              <div className="col-span-3 -mt-1 text-center text-[11px] text-muted-foreground">
+                +{look.items.length - 3} 件配饰/外套
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 中部：reason / hint */}

@@ -15,6 +15,10 @@ export interface TryOnResult {
 
 /** 把 look 转换为可送进 prompt 的中文描述 */
 export function buildTryOnPromptCN(look: Look): string {
+  // 参考衣橱 look 优先复用原 prompt（由 wan2.x 生成时产出，质量更高）
+  if (look.source === 'inspiration' && look.inspirationPrompt) {
+    return look.inspirationPrompt;
+  }
   const items = look.items
     .map((it) => {
       const colorName = colorWord(it.color);

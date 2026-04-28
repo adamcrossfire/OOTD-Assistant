@@ -9,12 +9,21 @@ import { Heart, Luggage, MapPin, Trash2, Calendar, Sparkles } from 'lucide-react
 import { useToast } from '@/hooks/use-toast';
 
 type SubTab = 'look' | 'trip';
+type SourceFilter = 'all' | 'real' | 'inspiration';
 
 export function Favorites() {
   const { favoriteLooks, removeFavorite, saveFavorite, pushHistory, savedTrips, removeSavedTrip, wardrobe } = useApp();
   const [tryOnLook, setTryOnLook] = useState<Look | null>(null);
   const [tryOnOpen, setTryOnOpen] = useState(false);
   const [tab, setTab] = useState<SubTab>('look');
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all');
+
+  const inspirationCount = favoriteLooks.filter((l) => l.source === 'inspiration').length;
+  const realCount = favoriteLooks.length - inspirationCount;
+  const filteredLooks =
+    sourceFilter === 'all'
+      ? favoriteLooks
+      : favoriteLooks.filter((l) => (l.source ?? 'real') === sourceFilter);
   const { toast } = useToast();
   const [, setLocation] = useLocation();
 
@@ -72,23 +81,76 @@ export function Favorites() {
                 <p className="text-xs text-muted-foreground mt-1">在「日常搭」里点 ❤ 收藏</p>
               </div>
             ) : (
-              favoriteLooks.map((l) => (
-                <LookCard
-                  key={l.id}
-                  look={l}
-                  liked
-                  hideDislike
-                  onLike={() => removeFavorite(l.id)}
-                  onWear={() => {
-                    pushHistory(l);
-                    toast({ title: '今日就穿它', description: '已加入穿搭日历' });
-                  }}
-                  onTryOn={() => {
-                    setTryOnLook(l);
-                    setTryOnOpen(true);
-                  }}
-                />
-              ))
+              <>
+                {/* 来源筛选：全部 / 真实搭配 / 灵感 */}
+                {inspirationCount > 0 && realCount > 0 && (
+                  <div className="flex items-center gap-1.5 -mt-1" role="tablist" aria-label="来源筛选">
+                    <button
+                      data-testid="filter-source-all"
+                      role="tab"
+                      aria-selected={sourceFilter === 'all'}
+                      onClick={() => setSourceFilter('all')}
+                      className={`text-[11px] px-2.5 py-1 rounded-full font-semibold transition ${
+                        sourceFilter === 'all'
+                          ? 'bg-foreground text-background'
+                          : 'bg-card border border-card-border text-muted-foreground hover-elevate'
+                      }`}
+                    >
+                      全部 {favoriteLooks.length}
+                    </button>
+                    <button
+                      data-testid="filter-source-real"
+                      role="tab"
+                      aria-selected={sourceFilter === 'real'}
+                      onClick={() => setSourceFilter('real')}
+                      className={`text-[11px] px-2.5 py-1 rounded-full font-semibold transition ${
+                        sourceFilter === 'real'
+                          ? 'bg-foreground text-background'
+                          : 'bg-card border border-card-border text-muted-foreground hover-elevate'
+                      }`}
+                    >
+                      真实搭配 {realCount}
+                    </button>
+                    <button
+                      data-testid="filter-source-inspiration"
+                      role="tab"
+                      aria-selected={sourceFilter === 'inspiration'}
+                      onClick={() => setSourceFilter('inspiration')}
+                      className={`text-[11px] px-2.5 py-1 rounded-full font-semibold transition flex items-center gap-1 ${
+                        sourceFilter === 'inspiration'
+                          ? 'bg-amber-500 text-white'
+                          : 'bg-card border border-card-border text-muted-foreground hover-elevate'
+                      }`}
+                    >
+                      <Sparkles className="h-3 w-3" />
+                      灵感 {inspirationCount}
+                    </button>
+                  </div>
+                )}
+                {filteredLooks.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-card-border p-8 text-center">
+                    <p className="text-xs text-muted-foreground">该筛选下暂无收藏</p>
+                  </div>
+                ) : (
+                  filteredLooks.map((l) => (
+                  <LookCard
+                    key={l.id}
+                    look={l}
+                    liked
+                    hideDislike
+                    onLike={() => removeFavorite(l.id)}
+                    onWear={() => {
+                      pushHistory(l);
+                      toast({ title: '今日就穿它', description: '已加入穿搭日历' });
+                    }}
+                    onTryOn={() => {
+                      setTryOnLook(l);
+                      setTryOnOpen(true);
+                    }}
+                  />
+                  ))
+                )}
+              </>
             )}
           </>
         )}

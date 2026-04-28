@@ -85,6 +85,12 @@ export interface Look {
   reason: string;
   /** 缺失的关键单品提示 */
   missingHint?: string;
+  /** 来源：real=真实衣橱搭出，inspiration=参考衣橱 AI 生成 */
+  source?: 'real' | 'inspiration';
+  /** 参考衣橱模式的整体搭配预览图 URL（wan2.x t2i 生成） */
+  inspirationImage?: string;
+  /** 参考衣橱生成时用的 prompt，试穿时复用 */
+  inspirationPrompt?: string;
 }
 
 /** 天气 */

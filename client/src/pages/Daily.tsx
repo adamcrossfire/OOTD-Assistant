@@ -21,6 +21,7 @@ import { useToast } from '@/hooks/use-toast';
 import { generateStylistComment } from '../lib/llm-stylist';
 import { BUILTIN_STYLES, type StylePack } from '../../../shared/styles-library';
 import { extractStyleFromScreenshot } from '../lib/style-vision';
+import { generateInspirationLooks } from '../lib/inspiration-api';
 
 const OCCASIONS: { value: Occasion; label: string; emoji: string }[] = [
   { value: 'commute', label: '通勤', emoji: '💼' },
@@ -114,6 +115,14 @@ export function Daily() {
   const [looksWithComment, setLooksWithComment] = useState<Look[]>([]);
   const [activeIdx, setActiveIdx] = useState(0); // 当前展示的 Look 下标
 
+  // 参考衣橱 / 真实衣橱模式，衣橱<5件时默认参考衣橱
+  const [wardrobeMode, setWardrobeMode] = useState<'real' | 'inspiration'>(
+    () => (wardrobe.length < 5 ? 'inspiration' : 'real'),
+  );
+  // 参考衣橱生成状态
+  const [inspoLooks, setInspoLooks] = useState<Look[]>([]);
+  const [inspoLoading, setInspoLoading] = useState(false);
+
   // —— 首次进入：拉真实天气 ——
   useEffect(() => {
     if (weather.length > 0) return; // 已有缓存
@@ -139,7 +148,7 @@ export function Daily() {
     city,
   };
 
-  const looks = useMemo(() => {
+  const realLooks = useMemo(() => {
     const avgTemp = (today.tempHigh + today.tempLow) / 2;
     return recommendLooks({
       wardrobe,
@@ -153,10 +162,38 @@ export function Daily() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wardrobe, occasion, dressCode, stylePrefs, seed, today.condition, today.tempHigh, today.tempLow, selectedStylePack]);
 
-  // —— 条件变化（场景/Dress Code/风格/seed/风格包）后重置到第一套 ——
+  // 参考衣橱模式：根据条件 AI 生成 3 套
+  useEffect(() => {
+    if (wardrobeMode !== 'inspiration') return;
+    let cancelled = false;
+    setInspoLoading(true);
+    const avgTemp = (today.tempHigh + today.tempLow) / 2;
+    generateInspirationLooks({
+      occasion,
+      dressCode,
+      styles: stylePrefs,
+      gender,
+      weather: { temp: avgTemp, condition: today.condition },
+      stylePack: selectedStylePack,
+      count: 3,
+      baseSeed: seed + 1,
+    })
+      .then((arr) => {
+        if (!cancelled) setInspoLooks(arr);
+      })
+      .finally(() => !cancelled && setInspoLoading(false));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wardrobeMode, occasion, dressCode, stylePrefs, seed, selectedStylePack, gender, today.tempHigh, today.tempLow, today.condition]);
+
+  const looks = wardrobeMode === 'inspiration' ? inspoLooks : realLooks;
+
+  // —— 条件变化（场景/Dress Code/风格/seed/风格包/模式）后重置到第一套 ——
   useEffect(() => {
     setActiveIdx(0);
-  }, [occasion, dressCode, stylePrefs, seed, selectedStylePack]);
+  }, [occasion, dressCode, stylePrefs, seed, selectedStylePack, wardrobeMode]);
 
   // —— 用 LLM 风格 mock 改写 reason ——
   useEffect(() => {
@@ -322,6 +359,49 @@ export function Daily() {
       </Dialog>
 
       <div className="px-5 pt-4 space-y-5">
+        {/* 衣橱模式切换：真实衣橱 / 参考衣橱 */}
+        <section data-testid="section-wardrobe-mode">
+          <div
+            className="relative grid grid-cols-2 rounded-full bg-secondary p-1 text-sm font-medium"
+            role="tablist"
+          >
+            <span
+              aria-hidden
+              className="absolute top-1 bottom-1 left-1 w-[calc(50%-0.25rem)] rounded-full bg-background shadow-sm transition-transform duration-300"
+              style={{ transform: wardrobeMode === 'real' ? 'translateX(0)' : 'translateX(100%)' }}
+            />
+            <button
+              data-testid="button-mode-real"
+              role="tab"
+              aria-selected={wardrobeMode === 'real'}
+              onClick={() => setWardrobeMode('real')}
+              className={`relative z-10 py-2 rounded-full transition-colors ${
+                wardrobeMode === 'real' ? 'text-foreground' : 'text-muted-foreground'
+              }`}
+            >
+              真实衣橱{wardrobe.length > 0 ? ` (${wardrobe.length})` : ''}
+            </button>
+            <button
+              data-testid="button-mode-inspiration"
+              role="tab"
+              aria-selected={wardrobeMode === 'inspiration'}
+              onClick={() => setWardrobeMode('inspiration')}
+              className={`relative z-10 py-2 rounded-full transition-colors ${
+                wardrobeMode === 'inspiration' ? 'text-foreground' : 'text-muted-foreground'
+              }`}
+            >
+              ✨ 参考衣橱
+            </button>
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-1.5 px-1" data-testid="text-mode-hint">
+            {wardrobeMode === 'inspiration'
+              ? wardrobe.length < 5
+                ? '衣橱暂时还不够，先看看 AI 按你的风格生成的灵感搭配'
+                : 'AI 按你选的风格+场合生成参考搭配，可试穿可收藏作为「灵感」'
+              : '从你已上传的衣服里智能搭配'}
+          </p>
+        </section>
+
         <WeatherCard weather={today} loading={loadingWeather} onCityChange={handleCityChange} />
 
         {/* 今日风格横滚条 */}
@@ -506,10 +586,23 @@ export function Daily() {
               <span className="text-xs text-muted-foreground">左右滑动切换</span>
             )}
           </div>
-          {looks.length === 0 ? (
+          {wardrobeMode === 'inspiration' && inspoLoading && inspoLooks.length === 0 ? (
+            <div
+              className="rounded-2xl border border-dashed border-card-border p-10 text-center"
+              data-testid="inspo-loading"
+            >
+              <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2 text-primary" />
+              <p className="text-sm text-muted-foreground">
+                AI 正在按你选的风格+场合生成参考搭配…<br />
+                <span className="text-[11px]">首次生成约 10-15 秒</span>
+              </p>
+            </div>
+          ) : looks.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-card-border p-8 text-center">
               <p className="text-sm text-muted-foreground">
-                没有找到合适的搭配 —— 试试切换 Dress Code 或风格
+                {wardrobeMode === 'real'
+                  ? '衣橱里还不够搭配 —— 可以先用「参考衣橱」看看'
+                  : '没有找到合适的搭配 —— 试试切换 Dress Code 或风格'}
               </p>
             </div>
           ) : (
