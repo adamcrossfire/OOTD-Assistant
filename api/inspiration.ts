@@ -51,6 +51,38 @@ const OCCASION_EN: Record<string, string> = {
   '出行': 'travel weekend',
 };
 
+/**
+ * 场合具体元素提示词：帮 wan 生出“一眼能认出场合”的单品。
+ * 会以「MUST include」的语气拼在 prompt 顶部，避免被身后的风格关键词覆盖。
+ */
+const OCCASION_DETAIL: Record<string, { en: string; female: string; male: string }> = {
+  '通勤': {
+    en: 'OFFICE COMMUTE outfit',
+    female: 'crisp shirt or fine knit, tailored straight trousers or midi pencil skirt, leather tote, low heels or loafers, polished and professional',
+    male: 'button-up shirt, tailored chinos or wool trousers, leather belt, leather loafers or oxford shoes, briefcase, polished and professional',
+  },
+  '约会': {
+    en: 'ROMANTIC DATE outfit',
+    female: 'soft feminine blouse or knit top, flowing midi skirt or slim jeans, delicate jewelry, light makeup, gentle silhouette, warm-toned colors',
+    male: 'fitted shirt or fine knit sweater, dark slim trousers or clean denim, leather watch, refined casual look, slightly dressed up',
+  },
+  '日常': {
+    en: 'CASUAL EVERYDAY outfit',
+    female: 'comfortable cotton tee or sweatshirt, relaxed jeans or wide-leg trousers, simple sneakers, canvas tote, easy and unpretentious',
+    male: 'cotton tee or hoodie, relaxed jeans or cargo pants, sneakers, casual cap optional, easy and unpretentious',
+  },
+  '派对': {
+    en: 'EVENING PARTY outfit',
+    female: 'eye-catching party piece — sequin top, satin slip dress, off-shoulder top, mini skirt or fitted leather pants, statement heels, bold makeup, glamorous and festive',
+    male: 'sharp going-out look — silk shirt or printed shirt, fitted black trousers or dark jeans, leather boots or pointed loafers, statement jacket, edgy and confident',
+  },
+  '出行': {
+    en: 'TRAVEL outfit',
+    female: 'comfortable layered top, stretch pants or relaxed jeans, sneakers, crossbody bag, breathable practical look',
+    male: 'breathable tee or shirt, cargo pants or trekking trousers, sneakers or hiking shoes, backpack, practical look',
+  },
+};
+
 const DC_EN: Record<string, string> = {
   'casual': 'casual',
   'smart-casual': 'smart casual',
@@ -88,23 +120,35 @@ function buildPrompt(req: InspirationRequest): string {
   const dc = DC_EN[req.dressCode] ?? req.dressCode;
   const styleStr = styleSummary(req);
   const palette = req.stylePack?.colors?.length
-    ? `dominant color palette: ${req.stylePack.colors.slice(0, 4).join(', ')}.`
+    ? `Color palette to follow: ${req.stylePack.colors.slice(0, 4).join(', ')}.`
     : '';
   const tempHint =
     typeof req.weather?.temp === 'number'
       ? req.weather.temp >= 24
-        ? 'light summer fabrics, breathable, short sleeves or skirts.'
+        ? 'Light summer fabrics, breathable, short sleeves or skirts.'
         : req.weather.temp >= 16
-          ? 'spring layering, light jacket or knit cardigan.'
+          ? 'Spring layering, light jacket or knit cardigan.'
           : req.weather.temp >= 8
-            ? 'autumn layering, warm sweater, trousers, optional coat.'
-            : 'winter outfit, thick coat, warm knits, scarf or boots.'
+            ? 'Autumn layering, warm sweater, trousers, optional coat.'
+            : 'Winter outfit, thick coat, warm knits, scarf or boots.'
       : '';
+
+  // 场合描述前置：先说「什么场合」再说「什么风格」，避免被风格关键词抢走语义
+  const detail = OCCASION_DETAIL[req.occasion];
+  const occasionPieces = detail
+    ? (req.gender === 'male' ? detail.male : detail.female)
+    : '';
+  const occasionHeader = detail
+    ? `OCCASION (most important, must be visually obvious): ${detail.en} for ${oc}. Outfit MUST include: ${occasionPieces}.`
+    : `OCCASION: ${oc}, ${dc} dress code.`;
+
   return [
-    `Full-body fashion editorial photo of ${subject} wearing a complete styled outfit for ${oc}, ${dc} dress code.`,
-    styleStr ? `Style direction: ${styleStr}.` : '',
+    occasionHeader,
+    `Full-body fashion editorial photo of ${subject}.`,
+    styleStr ? `Style aesthetic (apply within the occasion): ${styleStr}.` : '',
     palette,
     tempHint,
+    `Dress code reference: ${dc}.`,
     `Standing pose, slight 3/4 angle, soft daylight, neutral seamless studio background (warm beige #f5efe6).`,
     `Photorealistic, magazine-quality, sharp focus on garments. No text, no logos, no watermark.`,
   ]

@@ -95,7 +95,8 @@ export function Daily() {
   // dressCode 由 occasion 自动推导（保留给后端 API），不再独立可选
   const dressCode: DressCode = OCCASION_TO_DC[occasion];
   // 风格偏好（多选）已移除 —— 完全由「今日风格」横滚条的 selectedStylePack 决定
-  const stylePrefs: never[] = [];
+  // 用 useMemo 冻结引用，避免每次 render 创建新数组触发下游 effect
+  const stylePrefs = useMemo<never[]>(() => [], []);
   const [seed, setSeed] = useState(0); // 重新生成
   const [looksWithComment, setLooksWithComment] = useState<Look[]>([]);
   const [activeIdx, setActiveIdx] = useState(0); // 当前展示的 Look 下标
@@ -404,18 +405,42 @@ export function Daily() {
             {allStyles.map((sp) => {
               const active = selectedStylePack?.id === sp.id;
               const isCustom = sp.source === 'custom';
+              // 场合匹配度：occasionScore[当前场合] < 40 表示「不太合适」，只提示不拦截
+              const occScoreVal = sp.occasionScore?.[occasion as keyof NonNullable<typeof sp.occasionScore>];
+              const occMismatch = !isCustom && typeof occScoreVal === 'number' && occScoreVal < 40;
               return (
                 <button
                   key={sp.id}
                   data-testid={`style-card-${sp.id}`}
-                  onClick={() => setSelectedStylePack(active ? null : sp)}
-                  className={`shrink-0 w-24 h-28 rounded-2xl border overflow-hidden flex flex-col hover-elevate relative ${
+                  onClick={() => {
+                    if (occMismatch && !active) {
+                      const ocCn: Record<string, string> = { commute: '通勤', date: '约会', casual: '日常', party: '派对' };
+                      const ocLabel = ocCn[occasion] ?? occasion;
+                      toast({
+                        title: `「${sp.name}」不太适合${ocLabel}`,
+                        description: '仍然可以选择，但生成效果可能不如预期',
+                      });
+                    }
+                    setSelectedStylePack(active ? null : sp);
+                  }}
+                  className={`shrink-0 w-24 h-28 rounded-2xl border overflow-hidden flex flex-col hover-elevate relative transition-opacity ${
                     active
                       ? 'border-primary ring-2 ring-primary/40'
-                      : 'border-card-border'
+                      : occMismatch
+                        ? 'border-card-border opacity-55'
+                        : 'border-card-border'
                   }`}
                   aria-label={sp.name}
                 >
+                  {/* 不太适合当前场合的角标 */}
+                  {occMismatch && !active && (
+                    <div
+                      className="absolute top-1 left-1 z-10 px-1.5 py-0.5 rounded-full bg-amber-500/90 text-white text-[8.5px] font-medium leading-none flex items-center gap-0.5"
+                      data-testid={`badge-mismatch-${sp.id}`}
+                    >
+                      <span>⚠</span>
+                    </div>
+                  )}
                   {/* 色块区 */}
                   <div
                     className="h-14 w-full flex"
@@ -617,11 +642,11 @@ export function Daily() {
 }
 
 // ============================================================
-// LookSwiper —— 纯手势滑动卡片切换器
-// • 主要交互：手指左右滑动（手机）/ 鼠标拖拽（桌面）
-// • 底部分页点仅作为位置指示器（不可点击，避免误耉）
-// • 边缘带弹性阻尼手感（overflow 后拖拽距离变短）
-// • 桌面补充：键盘 ← / → 切换（不占用视觉空间）
+// LookSwiper —— 原生 scroll-snap 横滚，最流畅的手机手感
+// • 用浏览器原生 overflow-x + scroll-snap-x，「有惯性 + 生涩、零成本、零 jank」
+// • IntersectionObserver 同步当前索引到父组件（驱动 第 X 套 文案 + 进度点）
+// • activeIdx 变化时（如重新生成后重置为 0）主动 scrollIntoView
+// • 桌面补充：键盘 ← / → 切换 + 进度点可点击跳转
 // ============================================================
 function LookSwiper({
   looks,
@@ -644,18 +669,71 @@ function LookSwiper({
   onTryOn: (l: Look) => void;
   onRefresh: () => void;
 }) {
-  const safeIdx = Math.min(activeIdx, looks.length - 1);
+  const safeIdx = Math.min(Math.max(0, activeIdx), Math.max(0, looks.length - 1));
   const total = looks.length;
 
-  // 手势状态
-  const [dragX, setDragX] = useState(0);
-  const [dragging, setDragging] = useState(false);
-  const startX = useMemo(() => ({ current: 0, y: 0, locked: false as 'h' | 'v' | false, w: 0 }), []);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef<Array<HTMLDivElement | null>>([]);
+
+  // 外部 activeIdx 变化 → 主动滚到该项（场合切换时重置为 0，点击 dot 跳转收到）
+  // 用容器 scrollTo 而非 elem.scrollIntoView，后者会连锁滚动整个页面
+  useEffect(() => {
+    const root = scrollerRef.current;
+    const node = itemRefs.current[safeIdx];
+    if (!root || !node) return;
+    root.scrollTo({ left: node.offsetLeft - root.offsetLeft, behavior: 'smooth' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [safeIdx, total]);
+
+  // IntersectionObserver 监听当前可见项 → 同步 activeIdx
+  // 用 ref 避免闭包限制：回调里读 setActiveIdx 的最新引用
+  const setActiveIdxRef = useRef(setActiveIdx);
+  useEffect(() => { setActiveIdxRef.current = setActiveIdx; }, [setActiveIdx]);
+  const lastIdxRef = useRef(safeIdx);
+  useEffect(() => { lastIdxRef.current = safeIdx; }, [safeIdx]);
+
+  useEffect(() => {
+    const root = scrollerRef.current;
+    if (!root) return;
+
+    // 监听 scroll 事件，取中点最近的 item。
+    // 重点：只在「滚动停止后」才同步 activeIdx，避免在 smooth scroll 过程中动走。
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const settle = () => {
+      const items = itemRefs.current.filter(Boolean) as HTMLDivElement[];
+      if (!items.length) return;
+      const center = root.scrollLeft + root.clientWidth / 2;
+      let bestIdx = 0;
+      let bestDist = Infinity;
+      for (const it of items) {
+        const itCenter = it.offsetLeft + it.clientWidth / 2;
+        const dist = Math.abs(itCenter - center);
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestIdx = Number(it.dataset.idx);
+        }
+      }
+      if (bestIdx !== lastIdxRef.current) {
+        lastIdxRef.current = bestIdx;
+        setActiveIdxRef.current(bestIdx);
+      }
+    };
+    const onScroll = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(settle, 120); // 防抖：滚动停止 120ms 后计算最近 item
+    };
+    root.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      root.removeEventListener('scroll', onScroll);
+      if (timer) clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [total]);
 
   const goPrev = () => setActiveIdx(Math.max(0, safeIdx - 1));
   const goNext = () => setActiveIdx(Math.min(total - 1, safeIdx + 1));
 
-  // 键盘左右切换（桌面补充交互，不占用视觉空间）
+  // 键盘左右切换
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'ArrowLeft') goPrev();
@@ -666,95 +744,56 @@ function LookSwiper({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [safeIdx, total]);
 
-  const handlePointerDown = (e: React.PointerEvent) => {
-    setDragging(true);
-    startX.current = e.clientX;
-    startX.y = e.clientY;
-    startX.locked = false;
-    startX.w = (e.currentTarget as HTMLElement).offsetWidth;
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-  };
-  const handlePointerMove = (e: React.PointerEvent) => {
-    if (!dragging) return;
-    const dx = e.clientX - startX.current;
-    const dy = e.clientY - startX.y;
-
-    // 锁定主轴：如果用户是垂直滚动，不拦截页面滚动
-    if (!startX.locked) {
-      if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
-        startX.locked = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
-      }
-    }
-    if (startX.locked === 'v') return; // 垂直滚动交给页面
-
-    // 边缘项拖拽阻尼（超出边界后距离减半）
-    let effective = dx;
-    if ((safeIdx === 0 && dx > 0) || (safeIdx === total - 1 && dx < 0)) {
-      effective = dx * 0.35;
-    }
-    setDragX(effective);
-  };
-  const handlePointerUp = () => {
-    if (!dragging) return;
-    setDragging(false);
-    const w = startX.w || 1;
-    // 阈值：超过卡片宽 18% 即触发切换（手感轻快）
-    const ratio = dragX / w;
-    if (ratio > 0.18) goPrev();
-    else if (ratio < -0.18) goNext();
-    setDragX(0);
-    startX.locked = false;
-  };
-
   return (
     <div className="select-none">
-      {/* 滑动区域 —— 用户可以在这里任意处按住拖动 */}
+      {/* 原生横滚 + scroll-snap：最流畅的手机手感 */}
       <div
-        className="relative overflow-hidden touch-pan-y"
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
-        style={{ cursor: dragging ? 'grabbing' : 'grab' }}
+        ref={scrollerRef}
+        data-testid="look-swiper-scroller"
+        className="flex overflow-x-auto snap-x -mx-5 px-5 pb-1 gap-2 scroll-smooth no-scrollbar"
+        style={{
+          scrollbarWidth: 'none',
+          msOverflowStyle: 'none',
+          WebkitOverflowScrolling: 'touch',
+          overscrollBehaviorX: 'contain',
+        }}
       >
-        <div
-          className="flex"
-          style={{
-            transform: `translateX(calc(${-safeIdx * 100}% + ${dragX}px))`,
-            transition: dragging
-              ? 'none'
-              : 'transform 320ms cubic-bezier(0.22, 1, 0.36, 1)',
-          }}
-        >
-          {looks.map((l) => (
-            <div key={l.id} className="w-full shrink-0 px-0.5">
-              <LookCard
-                look={l}
-                liked={favoriteIds.includes(l.id)}
-                hideDislike
-                stylePackName={stylePackName}
-                onLike={() => onLike(l)}
-                onWear={() => onWear(l)}
-                onTryOn={() => onTryOn(l)}
-              />
-            </div>
-          ))}
-        </div>
+        {looks.map((l, i) => (
+          <div
+            key={l.id}
+            ref={(el) => (itemRefs.current[i] = el)}
+            data-idx={i}
+            className="snap-start shrink-0 w-full"
+          >
+            <LookCard
+              look={l}
+              liked={favoriteIds.includes(l.id)}
+              hideDislike
+              stylePackName={stylePackName}
+              positionLabel={total > 1 ? `第 ${i + 1} / ${total} 套` : null}
+              onLike={() => onLike(l)}
+              onWear={() => onWear(l)}
+              onTryOn={() => onTryOn(l)}
+            />
+          </div>
+        ))}
       </div>
 
-      {/* 底部分页点 —— 仅作为位置指示器 */}
+      {/* 底部分页点 —— 可点击跳转 */}
       {total > 1 && (
         <div
           className="mt-4 flex items-center justify-center gap-1.5"
           aria-label={`共 ${total} 套，当前第 ${safeIdx + 1} 套`}
         >
           {looks.map((_, i) => (
-            <span
+            <button
               key={i}
               data-testid={`indicator-dot-${i}`}
-              className={`h-1.5 rounded-full transition-all duration-300 ${
+              onClick={() => setActiveIdx(i)}
+              className={`h-1.5 rounded-full transition-all duration-300 hover-elevate ${
                 i === safeIdx ? 'w-6 bg-primary' : 'w-1.5 bg-muted-foreground/25'
               }`}
+              aria-label={`跳转到第 ${i + 1} 套`}
             />
           ))}
         </div>

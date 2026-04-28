@@ -14,6 +14,8 @@ interface Props {
   hideDislike?: boolean;
   /** 当前匹配的小红书风格名（用于在卡片上显示角标） */
   stylePackName?: string | null;
+  /** 滑动模式下显示「第 X / N 套」的位置指示，仅在参考衣橱模式下替代分数徽章 */
+  positionLabel?: string | null;
 }
 
 const SCORE_LABEL = (s: number) => {
@@ -39,7 +41,9 @@ export function LookCard({
   onTryOn,
   hideDislike = false,
   stylePackName = null,
+  positionLabel = null,
 }: Props) {
+  const isInspiration = look.source === 'inspiration';
   return (
     <article
       className="
@@ -50,18 +54,29 @@ export function LookCard({
     >
       {/* 顶部：参考衣橱模式走整张大图，真实衣橱走单品平铺 */}
       <div className="bg-[hsl(36_25%_95%)] dark:bg-[hsl(24_8%_12%)] p-4 pb-2 relative">
-        {/* 匹配度徽章 */}
+        {/* 右上角徽章：参考衣橱显示位置指示，真实衣橱显示匹配度 */}
         <div
           className="absolute top-4 right-4 flex flex-col items-end gap-1 z-10"
         >
-          <div
-            className="px-2.5 py-1 rounded-full text-[11px] font-semibold tracking-tight bg-card border border-card-border"
-            style={{ color: SCORE_COLOR(look.score) }}
-            data-testid={`badge-score-${look.id}`}
-          >
-            {look.score}% · {SCORE_LABEL(look.score)}
-          </div>
-          {look.source === 'inspiration' && (
+          {isInspiration ? (
+            positionLabel && (
+              <div
+                className="px-2.5 py-1 rounded-full text-[11px] font-semibold tracking-tight bg-card border border-card-border text-foreground"
+                data-testid={`badge-position-${look.id}`}
+              >
+                {positionLabel}
+              </div>
+            )
+          ) : (
+            <div
+              className="px-2.5 py-1 rounded-full text-[11px] font-semibold tracking-tight bg-card border border-card-border"
+              style={{ color: SCORE_COLOR(look.score) }}
+              data-testid={`badge-score-${look.id}`}
+            >
+              {look.score}% · {SCORE_LABEL(look.score)}
+            </div>
+          )}
+          {isInspiration && (
             <div
               className="px-2.5 py-1 rounded-full text-[11px] font-medium tracking-tight bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/30"
               data-testid={`badge-source-inspo-${look.id}`}
@@ -79,7 +94,7 @@ export function LookCard({
           )}
         </div>
 
-        {look.source === 'inspiration' && look.inspirationImage ? (
+        {isInspiration && look.inspirationImage ? (
           // 参考衣橱：一张整身搭配图
           <div
             className="aspect-[3/4] w-full rounded-2xl overflow-hidden bg-white dark:bg-[hsl(24_8%_18%)]"
