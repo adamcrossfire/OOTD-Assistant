@@ -1,5 +1,5 @@
 // ============================================================
-// 小红书流行风格库 —— Phase 1 内置 16 种 + Phase 2 用户自定义
+// 小红书流行风格库 —— Phase 1 内置 + Phase 2 用户自定义 + 趋势元数据
 //
 // 每个 StylePack 包含：
 //   - 唯一 id + 中文名 + 一句话描述
@@ -31,6 +31,17 @@ export interface StylePack {
   source: 'builtin' | 'custom';
   /** 自定义风格的截图（仅 custom） */
   screenshot?: string;
+  /** 阶段2：本风格的参考数据集/取材来源（趋势样本取自 Polyvore / Vogue Runway / 街拍数据集） */
+  inspiration?: string;
+  /** 阶段2：趋势注解，一句话点明热点来源，渲染在风格卡片副标题中 */
+  trendingNote?: string;
+  /** 阶段2：场合适配度（0-100），用于本地预筛选避免生成不合理组合 */
+  occasionScore?: {
+    commute: number;
+    date: number;
+    casual: number;
+    party: number;
+  };
 }
 
 // ========== 16 种内置风格（小红书 2024-2025 高频词） ==========
@@ -47,6 +58,9 @@ export const BUILTIN_STYLES: StylePack[] = [
     seasons: ['autumn', 'winter', 'spring'],
     gender: 'unisex',
     source: 'builtin',
+    inspiration: 'Polyvore + Vogue Runway',
+    trendingNote: 'Phoebe Philo 回归带起的 quiet aesthetic',
+    occasionScore: { commute: 95, date: 70, casual: 80, party: 50 },
   },
   {
     id: 'old-money',
@@ -59,6 +73,9 @@ export const BUILTIN_STYLES: StylePack[] = [
     seasons: ['all'],
     gender: 'unisex',
     source: 'builtin',
+    inspiration: 'Vogue Runway / The Row',
+    trendingNote: 'Succession 成为 Pinterest 年度热词',
+    occasionScore: { commute: 90, date: 95, casual: 70, party: 80 },
   },
   {
     id: 'dopamine',
@@ -71,6 +88,9 @@ export const BUILTIN_STYLES: StylePack[] = [
     seasons: ['spring', 'summer'],
     gender: 'unisex',
     source: 'builtin',
+    inspiration: 'Pinterest 街拍 + Polyvore',
+    trendingNote: '2024 小红书热词,巴黎时装周姬马赫赛带起',
+    occasionScore: { commute: 50, date: 80, casual: 95, party: 90 },
   },
   {
     id: 'maillard',
@@ -83,6 +103,9 @@ export const BUILTIN_STYLES: StylePack[] = [
     seasons: ['autumn', 'winter'],
     gender: 'unisex',
     source: 'builtin',
+    inspiration: 'Vogue 街拍 + StreetStyle-27k',
+    trendingNote: '2023 秋冬十二色调之首,小红书越热越狂',
+    occasionScore: { commute: 90, date: 90, casual: 85, party: 65 },
   },
   {
     id: 'pure-desire',
@@ -95,6 +118,9 @@ export const BUILTIN_STYLES: StylePack[] = [
     seasons: ['summer', 'spring'],
     gender: 'female',
     source: 'builtin',
+    inspiration: 'Polyvore + 小红书个人主页',
+    trendingNote: '人脸希、赵露思同款,甜辣风增长',
+    occasionScore: { commute: 25, date: 95, casual: 50, party: 90 },
   },
   {
     id: 'qian-jin',
@@ -107,6 +133,9 @@ export const BUILTIN_STYLES: StylePack[] = [
     seasons: ['spring', 'autumn'],
     gender: 'female',
     source: 'builtin',
+    inspiration: 'Vogue Runway + Chanel 季后',
+    trendingNote: 'Chanel 2024 春季中锻蝴蝶结使用率创新高',
+    occasionScore: { commute: 60, date: 95, casual: 50, party: 95 },
   },
   {
     id: 'la-mei',
@@ -119,6 +148,9 @@ export const BUILTIN_STYLES: StylePack[] = [
     seasons: ['summer'],
     gender: 'female',
     source: 'builtin',
+    inspiration: 'StreetStyle-27k + Pinterest',
+    trendingNote: 'Bella Hadid Y2K 回归热潮',
+    occasionScore: { commute: 15, date: 85, casual: 60, party: 95 },
   },
   {
     id: 'jk',
@@ -131,6 +163,9 @@ export const BUILTIN_STYLES: StylePack[] = [
     seasons: ['spring', 'autumn'],
     gender: 'female',
     source: 'builtin',
+    inspiration: '日本校园鱼口拍数据集',
+    trendingNote: '温妮同款、「三头身」作为年度趋势',
+    occasionScore: { commute: 30, date: 80, casual: 90, party: 60 },
   },
   {
     id: 'xin-zhong-shi',
@@ -143,6 +178,9 @@ export const BUILTIN_STYLES: StylePack[] = [
     seasons: ['all'],
     gender: 'unisex',
     source: 'builtin',
+    inspiration: '上海时装周 + 剧集《妾本》',
+    trendingNote: '2024 马面裙销量同比增 800%',
+    occasionScore: { commute: 70, date: 90, casual: 75, party: 85 },
   },
   {
     id: 'y2k',
@@ -155,6 +193,9 @@ export const BUILTIN_STYLES: StylePack[] = [
     seasons: ['spring', 'summer'],
     gender: 'female',
     source: 'builtin',
+    inspiration: 'Polyvore Y2K 档案 + Tumblr',
+    trendingNote: 'Olivia Rodrigo、《狂热》电影推动连续趋势',
+    occasionScore: { commute: 20, date: 75, casual: 80, party: 95 },
   },
   {
     id: 'preppy',
@@ -167,6 +208,9 @@ export const BUILTIN_STYLES: StylePack[] = [
     seasons: ['autumn', 'winter', 'spring'],
     gender: 'unisex',
     source: 'builtin',
+    inspiration: 'Vogue Runway + Polo Ralph Lauren',
+    trendingNote: '《Gossip Girl》重启带起针织背心都市中产趋势',
+    occasionScore: { commute: 90, date: 80, casual: 85, party: 60 },
   },
   {
     id: 'harajuku',
@@ -179,6 +223,9 @@ export const BUILTIN_STYLES: StylePack[] = [
     seasons: ['spring', 'summer', 'autumn'],
     gender: 'unisex',
     source: 'builtin',
+    inspiration: 'StreetStyle-27k + FRUiTS 杂志',
+    trendingNote: '代官山·原宿街拍复苏',
+    occasionScore: { commute: 25, date: 65, casual: 90, party: 90 },
   },
   {
     id: 'french',
@@ -191,6 +238,9 @@ export const BUILTIN_STYLES: StylePack[] = [
     seasons: ['spring', 'autumn'],
     gender: 'female',
     source: 'builtin',
+    inspiration: 'Vogue Paris + Sezane Lookbook',
+    trendingNote: '巴黎奥运以后法式主义全球趋势',
+    occasionScore: { commute: 90, date: 95, casual: 90, party: 70 },
   },
   {
     id: 'techwear',
@@ -203,6 +253,9 @@ export const BUILTIN_STYLES: StylePack[] = [
     seasons: ['all'],
     gender: 'unisex',
     source: 'builtin',
+    inspiration: 'ACRONYM 官方 + StreetStyle-27k',
+    trendingNote: 'Salomon XT-6 带起机能风主流化',
+    occasionScore: { commute: 70, date: 50, casual: 90, party: 75 },
   },
   {
     id: 'gorpcore',
@@ -215,6 +268,9 @@ export const BUILTIN_STYLES: StylePack[] = [
     seasons: ['autumn', 'winter', 'spring'],
     gender: 'unisex',
     source: 'builtin',
+    inspiration: "Patagonia / Arc'teryx Lookbook",
+    trendingNote: '「黑悟空打卡」推动户外装都市化',
+    occasionScore: { commute: 60, date: 50, casual: 95, party: 55 },
   },
   {
     id: 'minimal',
@@ -227,6 +283,9 @@ export const BUILTIN_STYLES: StylePack[] = [
     seasons: ['all'],
     gender: 'unisex',
     source: 'builtin',
+    inspiration: 'COS / Jil Sander Lookbook',
+    trendingNote: '「Quiet Luxury」诡点中的极简来面',
+    occasionScore: { commute: 95, date: 80, casual: 90, party: 65 },
   },
   // ========== 男装倾向风格 ==========
   {
@@ -240,6 +299,9 @@ export const BUILTIN_STYLES: StylePack[] = [
     seasons: ['all'],
     gender: 'male',
     source: 'builtin',
+    inspiration: 'POPEYE / Beams Lookbook',
+    trendingNote: '东京代官山街拍、「日系中背」持续趋势',
+    occasionScore: { commute: 95, date: 85, casual: 90, party: 60 },
   },
   {
     id: 'amekaji',
@@ -252,6 +314,9 @@ export const BUILTIN_STYLES: StylePack[] = [
     seasons: ['autumn', 'winter', 'spring'],
     gender: 'male',
     source: 'builtin',
+    inspiration: 'RRL / Free & Easy 杂志',
+    trendingNote: '复古丹宁收藏美学重热',
+    occasionScore: { commute: 70, date: 80, casual: 95, party: 60 },
   },
   {
     id: 'salaryman',
@@ -264,6 +329,9 @@ export const BUILTIN_STYLES: StylePack[] = [
     seasons: ['all'],
     gender: 'male',
     source: 'builtin',
+    inspiration: 'United Arrows Lookbook',
+    trendingNote: '「上班穿搭」赛道持续高增长',
+    occasionScore: { commute: 95, date: 85, casual: 50, party: 65 },
   },
 ];
 

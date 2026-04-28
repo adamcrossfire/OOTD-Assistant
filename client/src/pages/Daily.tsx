@@ -8,7 +8,7 @@ import { TryOnDialog } from '../components/TryOnDialog';
 import { Logo } from '../components/Logo';
 import { recommendLooks } from '../lib/style-engine';
 import { getWeatherByCity } from '../lib/weather-api';
-import type { Occasion, DressCode, Style, Look, Weather } from '../types';
+import type { Occasion, DressCode, Look, Weather } from '../types';
 import { Sparkles, RefreshCw, Settings2, User, Camera, Trash2, Plus, X as XIcon, Loader2 } from 'lucide-react';
 import {
   Dialog,
@@ -23,31 +23,14 @@ import { BUILTIN_STYLES, filterStylesByGender, type StylePack } from '../../../s
 import { extractStyleFromScreenshot } from '../lib/style-vision';
 import { generateInspirationLooks } from '../lib/inspiration-api';
 
+// 阶段1精简：只保留 4 个高频场合（通勤/约会/休闲/派对）
+// 移除「运动」「面试」（与风格冲突或低频），移除独立 DRESS CODE 维度（与场合 90% 重合）
+// dressCode 由场合自动推导，仍传给后端 API
 const OCCASIONS: { value: Occasion; label: string; emoji: string }[] = [
   { value: 'commute', label: '通勤', emoji: '💼' },
   { value: 'date', label: '约会', emoji: '🌹' },
-  { value: 'sport', label: '运动', emoji: '🏃' },
-  { value: 'interview', label: '面试', emoji: '🎯' },
+  { value: 'casual', label: '休闲', emoji: '☕' },
   { value: 'party', label: '派对', emoji: '🎉' },
-  { value: 'casual', label: '日常', emoji: '☕' },
-];
-
-const DRESS_CODES: { value: DressCode; label: string }[] = [
-  { value: 'casual', label: 'Casual' },
-  { value: 'smart-casual', label: 'Smart Casual' },
-  { value: 'formal', label: 'Formal' },
-  { value: 'sporty', label: 'Sporty' },
-];
-
-const STYLES: { value: Style; label: string }[] = [
-  { value: 'minimal', label: '极简' },
-  { value: 'japanese', label: '日系' },
-  { value: 'y2k', label: 'Y2K' },
-  { value: 'oldmoney', label: '老钱风' },
-  { value: 'street', label: '街头' },
-  { value: 'sweet', label: '甜美' },
-  { value: 'cool', label: '酷感' },
-  { value: 'business', label: '商务' },
 ];
 
 const OCCASION_TO_DC: Record<Occasion, DressCode> = {
@@ -109,8 +92,10 @@ export function Daily() {
 
   const [loadingWeather, setLoadingWeather] = useState(false);
   const [occasion, setOccasion] = useState<Occasion>('commute');
-  const [dressCode, setDressCode] = useState<DressCode>('smart-casual');
-  const [stylePrefs, setStylePrefs] = useState<Style[]>(['minimal']);
+  // dressCode 由 occasion 自动推导（保留给后端 API），不再独立可选
+  const dressCode: DressCode = OCCASION_TO_DC[occasion];
+  // 风格偏好（多选）已移除 —— 完全由「今日风格」横滚条的 selectedStylePack 决定
+  const stylePrefs: never[] = [];
   const [seed, setSeed] = useState(0); // 重新生成
   const [looksWithComment, setLooksWithComment] = useState<Look[]>([]);
   const [activeIdx, setActiveIdx] = useState(0); // 当前展示的 Look 下标
@@ -217,13 +202,8 @@ export function Daily() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [looks, selectedStylePack]);
 
-  const toggleStyle = (s: Style) => {
-    setStylePrefs((prev) => (prev.includes(s) ? prev.filter((p) => p !== s) : [...prev, s]));
-  };
-
   const handleOccasionChange = (oc: Occasion) => {
     setOccasion(oc);
-    setDressCode(OCCASION_TO_DC[oc]);
   };
 
   const handleCityChange = (newCity: string, list: Weather[]) => {
@@ -447,11 +427,16 @@ export function Daily() {
                       <span className="drop-shadow">{sp.emojis.slice(0, 3).join('')}</span>
                     </div>
                   </div>
-                  {/* 名字区 */}
+                  {/* 名字区 + 趋势副标题 */}
                   <div className="flex-1 flex flex-col items-center justify-center px-1 py-1.5 bg-card">
                     <div className="text-xs font-semibold tracking-tight text-foreground line-clamp-1">
                       {sp.name}
                     </div>
+                    {sp.trendingNote && !isCustom && (
+                      <div className="text-[8.5px] text-muted-foreground/80 mt-0.5 line-clamp-1 px-0.5">
+                        {sp.trendingNote}
+                      </div>
+                    )}
                     {isCustom && (
                       <div className="text-[9px] text-muted-foreground mt-0.5">自定义</div>
                     )}
@@ -485,18 +470,28 @@ export function Daily() {
             </button>
           </div>
           {selectedStylePack && (
-            <div className="mt-1 text-[11px] text-muted-foreground px-1">
-              {selectedStylePack.description}
+            <div className="mt-1 px-1 space-y-0.5">
+              <div className="text-[11px] text-muted-foreground">
+                {selectedStylePack.description}
+              </div>
+              {selectedStylePack.inspiration && (
+                <div className="text-[10px] text-muted-foreground/70 flex items-center gap-1">
+                  <span className="inline-block px-1.5 py-0.5 rounded bg-muted text-[9px] font-medium">
+                    参考
+                  </span>
+                  {selectedStylePack.inspiration}
+                </div>
+              )}
             </div>
           )}
         </section>
 
-        {/* 场景选择 */}
+        {/* 场景选择 —— 阶段1精简到 4 个 */}
         <section>
           <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
             今日场合
           </h2>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-4 gap-2">
             {OCCASIONS.map((o) => {
               const active = o.value === occasion;
               return (
@@ -513,60 +508,6 @@ export function Daily() {
                 >
                   <span className="text-base leading-none">{o.emoji}</span>
                   <span className="text-xs">{o.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* Dress Code */}
-        <section>
-          <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-            Dress Code
-          </h2>
-          <div className="flex gap-1.5 overflow-x-auto -mx-1 px-1 pb-1">
-            {DRESS_CODES.map((d) => {
-              const active = d.value === dressCode;
-              return (
-                <button
-                  key={d.value}
-                  data-testid={`button-dc-${d.value}`}
-                  onClick={() => setDressCode(d.value)}
-                  className={`
-                    shrink-0 px-3.5 py-1.5 rounded-full text-sm border hover-elevate
-                    ${active
-                      ? 'bg-foreground text-background border-foreground'
-                      : 'bg-card border-card-border text-foreground'}
-                  `}
-                >
-                  {d.label}
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* 风格 */}
-        <section>
-          <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
-            <Settings2 className="h-3 w-3" /> 风格偏好（多选）
-          </h2>
-          <div className="flex flex-wrap gap-1.5">
-            {STYLES.map((s) => {
-              const active = stylePrefs.includes(s.value);
-              return (
-                <button
-                  key={s.value}
-                  data-testid={`button-style-${s.value}`}
-                  onClick={() => toggleStyle(s.value)}
-                  className={`
-                    px-3 py-1.5 rounded-full text-xs border hover-elevate
-                    ${active
-                      ? 'bg-primary/10 border-primary text-primary font-semibold'
-                      : 'bg-card border-card-border text-muted-foreground'}
-                  `}
-                >
-                  {s.label}
                 </button>
               );
             })}
