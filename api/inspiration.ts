@@ -209,7 +209,7 @@ function inferItems(req: InspirationRequest): Array<{
 }
 
 async function callWan(prompt: string, seed: number, apiKey: string): Promise<string> {
-  // 1. 异步任务提交 —— 改用 wanx2.1-t2i-flash（更快、质量接近，单张 2-5s）
+  // 1. 异步任务提交 —— wan2.2-t2i-flash（更快、质量接近，单张 2-5s）
   const submit = await fetch(DASHSCOPE_T2I_URL, {
     method: 'POST',
     headers: {
@@ -218,7 +218,7 @@ async function callWan(prompt: string, seed: number, apiKey: string): Promise<st
       'X-DashScope-Async': 'enable',
     },
     body: JSON.stringify({
-      model: 'wanx2.1-t2i-flash',
+      model: 'wan2.2-t2i-flash',
       input: { prompt },
       parameters: { size: '720*1280', n: 1, seed },
     }),
